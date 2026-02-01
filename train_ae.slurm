@@ -9,7 +9,8 @@
 #SBATCH --output=logs/train_%j.out
 
 module load cuda/11.8
-source activate ldm
+source $HOME/.bashrc
+conda activate ldm
 
 export CUDA_VISIBLE_DEVICES=0 
 
