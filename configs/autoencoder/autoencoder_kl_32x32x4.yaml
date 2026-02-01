@@ -14,9 +14,9 @@ model:
     ddconfig:
       double_z: True
       z_channels: 4
-      resolution: 256
-      in_channels: 3
-      out_ch: 3
+      resolution: 504
+      in_channels: 1
+      out_ch: 1
       ch: 128
       ch_mult: [ 1,2,4,4 ]  # num_down = len(ch_mult)-1
       num_res_blocks: 2
@@ -26,18 +26,16 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 12
+    batch_size: 3
     wrap: True
     train:
-      target: ldm.data.imagenet.ImageNetSRTrain
+      target: ldm.data.cfd_data.CFDTrain
       params:
-        size: 256
-        degradation: pil_nearest
+        data_path: /data/full_dataset_2000.npz
     validation:
-      target: ldm.data.imagenet.ImageNetSRValidation
+      target: ldm.data.cfd_data.CFDValidation
       params:
-        size: 256
-        degradation: pil_nearest
+        data_path: /data/full_dataset_2000.npz
 
 lightning:
   callbacks:

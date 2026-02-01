@@ -345,7 +345,11 @@ class AutoencoderKL(pl.LightningModule):
         x = batch[k]
         if len(x.shape) == 3:
             x = x[..., None]
-        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        # Check if already (B, C, H, W) - Heuristic: C < H and C < W (1 < 504)
+        if x.shape[1] < x.shape[2] and x.shape[1] < x.shape[3]:
+            x = x.to(memory_format=torch.contiguous_format).float()
+        else:
+            x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
     def training_step(self, batch, batch_idx, optimizer_idx):
