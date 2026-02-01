@@ -2,11 +2,10 @@
 #SBATCH --job-name=ae_cfd
 #SBATCH --partition=coe-gpu
 #SBATCH --qos=coe-ice
-#SBATCH --gres=gpu:H200:1
+#SBATCH --gres=gpu:H100:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=08:00:00
-#SBATCH --no-requeue
 #SBATCH --output=logs/train_%j.out
 
 module load cuda/11.8
