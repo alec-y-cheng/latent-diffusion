@@ -6,6 +6,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=08:00:00
+#SBATCH --no-requeue
 #SBATCH --output=logs/train_%j.out
 
 module load cuda/11.8
