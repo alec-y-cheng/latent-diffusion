@@ -31,11 +31,11 @@ data:
     train:
       target: ldm.data.cfd_data.CFDTrain
       params:
-        data_path: /data/full_dataset_2000.npz
+        data_path: /data/full_dataset.npz
     validation:
       target: ldm.data.cfd_data.CFDValidation
       params:
-        data_path: /data/full_dataset_2000.npz
+        data_path: /data/full_dataset.npz
 
 lightning:
   callbacks:
