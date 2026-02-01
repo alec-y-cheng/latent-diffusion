@@ -19,4 +19,4 @@ python main.py \
   -t \
   --gpus 0, \
   --resume 
-logs/2026-02-01T00-29-11_autoencoder_kl_32x32x4/checkpoints
+logs/2026-02-01T00-29-11_autoencoder_kl_32x32x4/checkpoints/last.ckpt
