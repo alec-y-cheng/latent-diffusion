@@ -1,0 +1,46 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+
+# -------------------------
+# Conda / virtualenv
+# -------------------------
+.env
+.venv
+conda-env/
+latent_diffusion.egg-info/
+
+# -------------------------
+# Training artifacts
+# -------------------------
+logs/
+checkpoints/
+wandb/
+lightning_logs/
+
+# -------------------------
+# Data (DO NOT COMMIT)
+# -------------------------
+data/*.npz
+data/*.npy
+data/*.h5
+data/*.hdf5
+data/raw/
+data/processed/
+
+# -------------------------
+# OS / editor junk
+# -------------------------
+.DS_Store
+*.swp
+*.swo
+
+# -------------------------
+# Scratch / HPC
+# -------------------------
+scratch/
+slurm-*.out
+
