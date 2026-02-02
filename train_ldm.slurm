@@ -2,7 +2,7 @@
 #SBATCH --job-name=ldm_cfd
 #SBATCH --partition=coe-gpu
 #SBATCH --qos=coe-ice
-#SBATCH --gres=gpu:H100:1
+#SBATCH --gres=gpu:H200:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=012:00:00
