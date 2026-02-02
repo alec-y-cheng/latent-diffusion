@@ -102,8 +102,12 @@ class CFDConditionalDataset(Dataset):
                 if len(raw_x.shape) == 5 and raw_x.shape[1] == 1:
                     raw_x = np.squeeze(raw_x, axis=1) # -> (N, 504, 504, 8)
                 
-                # Permute X to (N, C, H, W)
-                self.x_data = np.transpose(raw_x, (0, 3, 1, 2))
+                # Permute X to (N, C, H, W) if needed
+                if raw_x.shape[1] != 8 and raw_x.shape[-1] == 8:
+                    # Assume (N, H, W, C) -> (N, C, H, W)
+                    raw_x = np.transpose(raw_x, (0, 3, 1, 2))
+                
+                self.x_data = raw_x
 
         except Exception as e:
             print(f"Error loading {self.data_path}: {e}")
