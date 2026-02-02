@@ -31,6 +31,7 @@ model:
         - 4
         - 4
         num_head_channels: 32
+        dropout: 0.1
     first_stage_config:
       target: ldm.models.autoencoder.AutoencoderKL
       params:
@@ -66,11 +67,11 @@ data:
     train:
       target: ldm.data.cfd_data.CFDConditionalTrain
       params:
-        data_path: data/full_dataset.npz
+        data_path: data/augmented
     validation:
       target: ldm.data.cfd_data.CFDConditionalValidation
       params:
-        data_path: data/full_dataset.npz
+        data_path: data/augmented
 
 lightning:
   callbacks:
