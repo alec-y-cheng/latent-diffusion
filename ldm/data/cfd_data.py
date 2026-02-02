@@ -164,6 +164,10 @@ class CFDConditionalDataset(Dataset):
         # Note: We resize directly to matching latent size to save compute (Factor 8)
         cond = torch.nn.functional.interpolate(x.unsqueeze(0), size=(64, 64), mode='bilinear', align_corners=False).squeeze(0)
 
+        # Permute to Channels Last (H, W, C) for DDPM compatibility
+        y = y.permute(1, 2, 0)
+        cond = cond.permute(1, 2, 0)
+
         return {"image": y, "cond": cond}
 
 class CFDConditionalTrain(CFDConditionalDataset):
