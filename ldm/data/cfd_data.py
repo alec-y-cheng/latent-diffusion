@@ -132,31 +132,29 @@ class CFDConditionalDataset(Dataset):
             except Exception as e:
                 print(f"Error mapping {fpath}: {e}")
 
-        # 3. Calculate Split
-        # We assume random shuffle is handled by DataLoader if needed.
-        # For splitting Train/Val, we split logically across the TOTAL range.
-        split_idx = int(total_samples * self.split_ratio)
+        # 3. Stratified Split (Ensure every file contributes to both Train and Val)
+        self.indices = []
         
-        self.global_start = 0
-        self.global_end = 0
-        
-        if self.split == "train":
-            self.global_start = 0
-            self.global_end = split_idx
-        else:
-            self.global_start = split_idx
-            self.global_end = total_samples
+        for i, size in enumerate(self.chunk_sizes):
+            # Calculate split point for THIS chunk
+            split_point = int(size * self.split_ratio)
             
-        self.length = self.global_end - self.global_start
-        print(f"CFDConditional ({self.split}): Total={self.length} (Global {self.global_start}-{self.global_end})")
+            if self.split == "train":
+                # Add range [0, split_point)
+                for local_idx in range(0, split_point):
+                    self.indices.append((i, local_idx))
+            else:
+                # Add range [split_point, size)
+                for local_idx in range(split_point, size):
+                    self.indices.append((i, local_idx))
+            
+        self.length = len(self.indices)
+        print(f"CFDConditional ({self.split}): Total={self.length} (Stratified across {len(self.files)} files)")
 
-        # 4. Normalization Stats (Compute from FIRST chunk as approximation to allow mmap)
-        # Computing min/max over 100GB mmap is slow. 
-        # We assume the first chunk (original data) is representative enough.
+        # 4. Normalization Stats (Compute from FIRST chunk as approximation)
         ref_x = self.data_chunks_x[0]
         ref_y = self.data_chunks_y[0]
         
-        # Use subset for stats to be fast
         limit = min(500, ref_x.shape[0])
         stat_x = ref_x[:limit]
         stat_y = ref_y[:limit]
@@ -175,18 +173,8 @@ class CFDConditionalDataset(Dataset):
         return self.length
 
     def __getitem__(self, idx):
-        # Map logical index to global index
-        global_idx = self.global_start + idx
-        
-        # Find which chunk
-        chunk_idx = 0
-        local_idx = global_idx
-        
-        for size in self.chunk_sizes:
-            if local_idx < size:
-                break
-            local_idx -= size
-            chunk_idx += 1
+        # Retrieve mapped placement
+        chunk_idx, local_idx = self.indices[idx]
             
         # Get data
         # Note: mmap access involves disk seek. 

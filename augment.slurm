@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=augment_data
 #SBATCH --partition=coe-gpu
-#SBATCH --mem=64G
+#SBATCH --mem=256G
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/augment.out
 
