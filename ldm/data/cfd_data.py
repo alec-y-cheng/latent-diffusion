@@ -160,9 +160,9 @@ class CFDConditionalDataset(Dataset):
         x = x * 2.0 - 1.0 # [-1, 1]
         x = torch.from_numpy(x).float()
 
-        # Resize X to 128x128 (for Concatenation with Latent)
-        # Note: We resize directly to matching latent size to save compute
-        cond = torch.nn.functional.interpolate(x.unsqueeze(0), size=(128, 128), mode='bilinear', align_corners=False).squeeze(0)
+        # Resize X to 64x64 (for Concatenation with Latent)
+        # Note: We resize directly to matching latent size to save compute (Factor 8)
+        cond = torch.nn.functional.interpolate(x.unsqueeze(0), size=(64, 64), mode='bilinear', align_corners=False).squeeze(0)
 
         return {"image": y, "cond": cond}
 
