@@ -321,6 +321,28 @@ class ImageLogger(Callback):
     def log_local(self, save_dir, split, images,
                   global_step, current_epoch, batch_idx):
         root = os.path.join(save_dir, "images", split)
+        os.makedirs(root, exist_ok=True)
+        
+        # Helper for Colormapping
+        def apply_cmap(t, cmap_name='viridis', vmin=None, vmax=None):
+            import matplotlib.cm as cm
+            # t is (1, H, W) or (H, W)
+            x = t.detach().cpu().numpy().squeeze()
+            if vmin is None: vmin = x.min()
+            if vmax is None: vmax = x.max()
+            
+            # Normalize to 0-1
+            norm_x = (x - vmin) / (vmax - vmin + 1e-6)
+            
+            # Get colormap
+            cmapped = cm.get_cmap(cmap_name)(norm_x) # (H, W, 4)
+            cmapped = cmapped[..., :3] # Drop Alpha -> (H, W, 3)
+            
+            # Back to (3, H, W) for grid tools? Or keep as image?
+            # We want to return (H, W, 3) uint8 image
+            return (cmapped * 255).astype(np.uint8)
+
+        # 1. Standard Logging (Grayscale)
         for k in images:
             grid = torchvision.utils.make_grid(images[k], nrow=4)
             if self.rescale:
@@ -334,8 +356,38 @@ class ImageLogger(Callback):
                 current_epoch,
                 batch_idx)
             path = os.path.join(root, filename)
-            os.makedirs(os.path.split(path)[0], exist_ok=True)
             Image.fromarray(grid).save(path)
+
+        # 2. CFD Visualization (Viridis + Diff)
+        if "inputs" in images and "samples" in images:
+            # Create grids first to match layouts
+            # Inputs / Samples are [-1, 1]
+            gt_grid = torchvision.utils.make_grid(images["inputs"], nrow=4, padding=2)
+            sample_grid = torchvision.utils.make_grid(images["samples"], nrow=4, padding=2)
+            
+            # Diff: Pred - GT
+            # Range approx [-2, 2]
+            diff = images["samples"] - images["inputs"]
+            diff_grid = torchvision.utils.make_grid(diff, nrow=4, padding=2)
+            
+            # Apply Colormaps
+            # Inputs/Samples: Viridis, Fixed range [-1, 1]
+            vis_gt = apply_cmap(gt_grid, 'viridis', vmin=-1.0, vmax=1.0)
+            vis_sample = apply_cmap(sample_grid, 'viridis', vmin=-1.0, vmax=1.0)
+            
+            # Diff: RdBu_r (Blue=Over, Red=Under), Fixed range [-1, 1] (or -0.5, 0.5 for tolerance?)
+            # Let's use [-1, 1] to cover major errors.
+            vis_diff = apply_cmap(diff_grid, 'RdBu_r', vmin=-1.0, vmax=1.0)
+            
+            # Stitch: GT | Sample | Diff
+            combined = np.concatenate([vis_gt, vis_sample, vis_diff], axis=1) # Width dimension
+            
+            filename = "comparison_gs-{:06}_e-{:06}_b-{:06}.png".format(
+                global_step,
+                current_epoch,
+                batch_idx)
+            path = os.path.join(root, filename)
+            Image.fromarray(combined).save(path)
 
     def log_img(self, pl_module, batch, batch_idx, split="train"):
         check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
