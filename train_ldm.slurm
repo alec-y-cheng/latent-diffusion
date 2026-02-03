@@ -4,7 +4,7 @@
 #SBATCH --qos=coe-ice
 #SBATCH --gres=gpu:H200:1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --mem=256G
 #SBATCH --time=012:00:00
 #SBATCH --output=logs/train_%j.out
 
