@@ -14,7 +14,7 @@ conda activate ldm
 
 export CUDA_VISIBLE_DEVICES=0 
 
-python main.py \
+$CONDA_PREFIX/bin/python main.py \
   --base configs/latent-diffusion/cfd_ldm.yaml \
   -t \
   --gpus 0, \
