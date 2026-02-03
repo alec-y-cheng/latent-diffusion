@@ -326,8 +326,13 @@ class ImageLogger(Callback):
         # Helper for Colormapping
         def apply_cmap(t, cmap_name='viridis', vmin=None, vmax=None):
             import matplotlib.cm as cm
-            # t is (1, H, W) or (H, W)
+            # t is (3, H, W) usually from make_grid (RGB) or (1, H, W)
             x = t.detach().cpu().numpy().squeeze()
+            
+            # If make_grid returned RGB (3, H, W), collapse to 2D
+            if x.ndim == 3 and x.shape[0] == 3:
+                x = x[0] # Take first channel since they are identical for grayscale
+            
             if vmin is None: vmin = x.min()
             if vmax is None: vmax = x.max()
             
