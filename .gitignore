@@ -44,3 +44,7 @@ data/processed/
 scratch/
 slurm-*.out
 
+# -------------------------
+# Results
+# -------------------------
+results/

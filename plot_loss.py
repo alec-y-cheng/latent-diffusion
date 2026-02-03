@@ -6,8 +6,8 @@ import os
 # File path
 print(os.getcwd())
 
-csv_path = "./metrics.csv"
-output_path = "./loss_plot.png"
+csv_path = "./metrics_expanded_set.csv"
+output_path = "./loss_plot_expanded_set.png"
 
 # Load data
 try:
