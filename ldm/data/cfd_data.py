@@ -83,12 +83,18 @@ class CFDConditionalDataset(Dataset):
         self.split_ratio = split_ratio
         
         # 1. Identify Files
+        # We look for *_X.npy and assume matching *_Y.npy exists.
         if os.path.isdir(data_path):
-            self.files = sorted([os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('.npz')])
+            x_files = sorted([os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('_X.npy')])
         else:
-            self.files = [data_path]
-            
-        print(f"CFDConditional: Found {len(self.files)} files.")
+            # If pointing to a single file pair prefix? Or just assume folder always.
+            # Fallback if user points to a file ... likely won't happen if config points to folder
+            if data_path.endswith('_X.npy'):
+                x_files = [data_path]
+            else:
+                x_files = [data_path] # Might fail if not X.npy
+
+        print(f"CFDConditional: Found {len(x_files)} X-files.")
         
         self.data_chunks_x = []
         self.data_chunks_y = []
@@ -97,32 +103,27 @@ class CFDConditionalDataset(Dataset):
         total_samples = 0
         
         # 2. Map Files
-        for fpath in self.files:
+        for fpath_x in x_files:
             try:
-                # Use mmap_mode='r' to avoid loading into RAM
-                data = np.load(fpath, mmap_mode='r')
+                # Deduce Y path: data_mode_X.npy -> data_mode_Y.npy
+                fpath_y = fpath_x.replace('_X.npy', '_Y.npy')
                 
-                # Load Y
-                if 'Y' in data:
-                    raw_y = data['Y']
-                else:
-                    raw_y = data['arr_1'] # Fallback?
-                    
-                # Load X
-                if 'X' in data:
-                    raw_x = data['X']
-                else:
-                    raw_x = data['arr_0']
+                if not os.path.exists(fpath_y):
+                    print(f"Skipping {fpath_x}: Missing corresponding {fpath_y}")
+                    continue
 
-                # Squeeze Singleton (N, 1, 8, ...) -> (N, 8, ...)
+                # Use mmap_mode='r' - crucial for large datasets!
+                # .npy mmap is efficient and uses minimal RAM.
+                raw_x = np.load(fpath_x, mmap_mode='r')
+                raw_y = np.load(fpath_y, mmap_mode='r')
+
+                # Squeeze Singleton (N, 1, 8, ...) -> (N, 8, ...) if present
                 if len(raw_x.shape) == 5 and raw_x.shape[1] == 1:
                     raw_x = raw_x.squeeze(axis=1) # View, efficient
                 
-                # NO Transpose here if already (N, 8, H, W)
-                # If we needed transpose, it would be a view too.
                 # Check consistency
                 if raw_x.shape[0] != raw_y.shape[0]:
-                    print(f"Skipping {fpath}: Size mismatch X={raw_x.shape}, Y={raw_y.shape}")
+                    print(f"Skipping {fpath_x}: Size mismatch X={raw_x.shape}, Y={raw_y.shape}")
                     continue
                 
                 self.data_chunks_x.append(raw_x)
@@ -131,7 +132,7 @@ class CFDConditionalDataset(Dataset):
                 total_samples += raw_x.shape[0]
                 
             except Exception as e:
-                print(f"Error mapping {fpath}: {e}")
+                print(f"Error mapping {fpath_x}: {e}")
 
         # 3. Stratified Split (Ensure every file contributes to both Train and Val)
         self.indices = []
@@ -150,7 +151,7 @@ class CFDConditionalDataset(Dataset):
                     self.indices.append((i, local_idx))
             
         self.length = len(self.indices)
-        print(f"CFDConditional ({self.split}): Total={self.length} (Stratified across {len(self.files)} files)")
+        print(f"CFDConditional ({self.split}): Total={self.length} (Stratified across {len(x_files)} files)")
 
         # 4. Normalization Stats (Compute from FIRST chunk as approximation)
         ref_x = self.data_chunks_x[0]

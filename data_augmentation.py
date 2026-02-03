@@ -112,10 +112,12 @@ def augment_dataset(input_path, output_dir):
             if has_singleton:
                 X_new = np.expand_dims(X_new, axis=1)
 
-            # Save
-            save_name = os.path.join(output_dir, f"data_{mode}.npz")
-            print(f"Saving {save_name}...")
-            np.savez(save_name, X=X_new, Y=Y_new)
+            # Save as separate .npy files to allow mmap
+            base_name = os.path.join(output_dir, f"data_{mode}")
+            print(f"Saving {base_name}_X.npy / _Y.npy ...")
+            
+            np.save(f"{base_name}_X.npy", X_new)
+            np.save(f"{base_name}_Y.npy", Y_new)
             
             # Free memory
             del X_new, Y_new
