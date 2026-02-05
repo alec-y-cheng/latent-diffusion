@@ -106,6 +106,10 @@ def main():
             x_samples = model.decode_first_stage(samples_ddim)
             x_gt = batch[model.first_stage_key] 
             
+            # Ensure x_gt is (B, C, H, W). Dataset outputs (B, H, W, C)
+            if x_gt.ndim == 4 and x_gt.shape[-1] == 1:
+                x_gt = x_gt.permute(0, 3, 1, 2)
+            
             x_samples = torch.clamp(x_samples, -1.0, 1.0)
             
             # Save Images
