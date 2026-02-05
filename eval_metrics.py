@@ -64,29 +64,38 @@ def main():
     
     print(f"Starting Inference (DDIM {args.steps} steps)...")
     
+    # Visualization Helper
+    def apply_cmap(t, cmap_name='viridis', vmin=None, vmax=None):
+        import matplotlib.cm as cm
+        x = t.detach().cpu().numpy().squeeze()
+        # Handle 3-channel (RGB) if present? Here tensors are (H, W) or (1, H, W)
+        # Check if 3 channels?
+        if x.ndim == 3 and x.shape[0] == 3:
+             x = x[0]
+        
+        if vmin is None: vmin = x.min()
+        if vmax is None: vmax = x.max()
+        
+        norm_x = (x - vmin) / (vmax - vmin + 1e-6)
+        cmapped = cm.get_cmap(cmap_name)(norm_x) # (H, W, 4)
+        cmapped = cmapped[..., :3] 
+        return (cmapped * 255).astype(np.uint8)
+
+    save_count = 0
+    max_save = 10
+    
     with torch.no_grad():
         for batch in tqdm(dataloader):
             if count >= args.num_samples:
                 break
                 
             # Prepare Input
-            # move batch to device
             for k in batch:
                 batch[k] = batch[k].cuda()
             
-            # Get conditioning
-            # LDM expects specific handling. model.get_input handles keys.
-            # But get_input returns specific tensors.
-            # We need to manually replicate get_input logic or call it
-            # c, xc, ... = model.get_input(batch, model.first_stage_key)
-            # But we want to SAMPLE.
-            
-            # c = conditioning (latent)
-            # z = latent target (for autoencoder)
             z, c = model.get_input(batch, model.first_stage_key)
             
             # Sampling
-            # shape of latent: (B, 4, 64, 64). (From config: 4 channels, 64x64)
             shape = (model.channels, model.image_size, model.image_size)
             samples_ddim, _ = sampler.sample(S=args.steps,
                                              conditioning=c,
@@ -94,30 +103,41 @@ def main():
                                              shape=shape,
                                              verbose=False)
             
-            # Decode Latents to Image Space
             x_samples = model.decode_first_stage(samples_ddim)
-            x_gt = model.decode_first_stage(z) # Reconstruct GT from latent (fair comparison) or use Raw batch?
-            # Using decoded GT is better if we evaluate Generation independent of AE loss.
-            # But user wants "Pred vs GT".
-            # Usually we compare against RAW GT (batch['image']).
-            # But 'batch['image']' is 512x512.
-            # model.decode might be 512x512.
+            x_gt = batch[model.first_stage_key] 
             
-            # Let's compare against Raw GT to capture AE loss too?
-            x_raw_gt = batch[model.first_stage_key] # Inputs [-1, 1]
-            
-            # Clamp to [-1, 1]
             x_samples = torch.clamp(x_samples, -1.0, 1.0)
+            
+            # Save Images
+            if save_count < max_save:
+                # Iterate over batch
+                from PIL import Image
+                for i in range(x_samples.shape[0]):
+                    if save_count >= max_save: break
+                    
+                    img_sample = x_samples[i] # (1, H, W)
+                    img_gt = x_gt[i]         # (1, H, W)
+                    img_diff = img_sample - img_gt
+                    
+                    # Apply colormaps
+                    vis_gt = apply_cmap(img_gt, 'viridis', -1, 1)
+                    vis_pred = apply_cmap(img_sample, 'viridis', -1, 1)
+                    vis_diff = apply_cmap(img_diff, 'RdBu_r', -1, 1)
+                    
+                    combined = np.concatenate([vis_gt, vis_pred, vis_diff], axis=1) # Side by Side
+                    
+                    save_path = os.path.join(args.outdir, f"sample_{save_count:03d}.png")
+                    Image.fromarray(combined).save(save_path)
+                    save_count += 1
             
             # Calculate Metrics
             # MSE
-            mse = metric_mse(x_samples, x_raw_gt)
+            mse = metric_mse(x_samples, x_gt)
             rmse = torch.sqrt(mse)
             all_rmse.append(rmse.item())
             
             # SSIM
-            # Torchmetrics expects (B, C, H, W)
-            ssim_val = metric_ssim(x_samples, x_raw_gt)
+            ssim_val = metric_ssim(x_samples, x_gt)
             all_ssim.append(ssim_val.item())
             
             count += z.shape[0]
@@ -132,7 +152,6 @@ def main():
     print(f"SSIM: {mean_ssim:.6f}")
     print("="*30)
     
-    # Save to file
     with open(os.path.join(args.outdir, "metrics.txt"), "w") as f:
         f.write(f"Checkpoint: {args.ckpt}\n")
         f.write(f"Samples: {count}\n")
