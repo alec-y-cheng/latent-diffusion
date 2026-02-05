@@ -309,6 +309,7 @@ class DDPM(pl.LightningModule):
         log_prefix = 'train' if self.training else 'val'
 
         loss_dict.update({f'{log_prefix}/loss_simple': loss.mean()})
+        loss_dict.update({f'{log_prefix}/loss_rmse': torch.sqrt(loss.mean())})
         loss_simple = loss.mean() * self.l_simple_weight
 
         loss_vlb = (self.lvlb_weights[t] * loss).mean()
