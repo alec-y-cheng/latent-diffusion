@@ -4,10 +4,8 @@ import matplotlib.pyplot as plt
 import os
 
 # File path
-print(os.getcwd())
-
-csv_path = "./metrics_full.csv"
-output_path = "./loss_plot_full.png"
+csv_path = r"/Users/dcheng/latent-diffusion/results/metrics_new.csv"
+output_path = r"/Users/dcheng/latent-diffusion/results/loss_comparison_plot.png"
 
 # Load data
 try:
@@ -16,9 +14,11 @@ try:
     
     # Check for NaNs
     if df.isnull().values.any():
-        print("Warning: NaNs found in data.")
+        print("Warning: NaNs found in data (this is normal for epoch-based metrics in step-based logs).")
+        # We should fill NaNs or drop rows where the metric doesn't exist?
+        # Actually, let's just use forward fill or dropna for plotting specific columns
     
-    print(f"Stats:\n{df.describe()}")
+    # print(f"Stats:\n{df.describe()}")
 
 except Exception as e:
     print(f"Error loading CSV: {e}")
@@ -27,17 +27,23 @@ except Exception as e:
 # plotting
 plt.figure(figsize=(12, 6))
 
-# Filter NaNs separately because train and val are logged at different steps
-train_data = df.dropna(subset=['train/loss_simple_epoch'])
-val_data = df.dropna(subset=['val/loss'])
+# Plot Training Loss
+# We filter to ignore step-based NaNs if any
+train_df = df.dropna(subset=['train/loss_epoch'])
+plt.plot(train_df['epoch'], train_df['train/loss_epoch'], label='Train Loss (Epoch)', linewidth=1.5)
 
-plt.plot(train_data['epoch'], train_data['train/loss_simple_epoch'], label='Train Loss', linewidth=1.5)
-plt.plot(val_data['epoch'], val_data['val/loss'], label='Validation Loss', alpha=0.7, linewidth=1.5, marker='o') # Add marker to see sparse val points
+# Plot Validation Loss
+# Check if val/loss exists (it usually logs less frequently)
+if 'val/loss' in df.columns:
+    val_df = df.dropna(subset=['val/loss'])
+    plt.plot(val_df['epoch'], val_df['val/loss'], label='Validation Loss', alpha=0.7, linewidth=1.5, marker='o')
+
 plt.xlabel('Epoch')
-plt.ylabel('Loss (Log scale)')
+plt.ylabel('Loss (Log Scale)')
 plt.title('Training and Validation Loss History')
+plt.legend()
 plt.grid(True, which="both", ls="-", alpha=0.5)
-plt.yscale('log')
+plt.yscale('log') # Log scale is often better for loss
 
 # Save plot
 plt.savefig(output_path)
