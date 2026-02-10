@@ -515,6 +515,8 @@ if __name__ == "__main__":
     #               key: value
 
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    if "SLURM_JOB_ID" in os.environ:
+        now += f"_job{os.environ['SLURM_JOB_ID']}"
 
     # add cwd for convenience and to make classes in this file available when
     # running as `python main.py`
