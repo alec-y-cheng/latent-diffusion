@@ -67,11 +67,11 @@ data:
     train:
       target: ldm.data.cfd_data.CFDConditionalTrain
       params:
-        data_path: data/augmented
+        data_path: data/full_dataset.npz
     validation:
       target: ldm.data.cfd_data.CFDConditionalValidation
       params:
-        data_path: data/augmented
+        data_path: data/full_dataset.npz
 
 lightning:
   callbacks:
