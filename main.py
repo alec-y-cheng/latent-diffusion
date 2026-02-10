@@ -534,6 +534,7 @@ if __name__ == "__main__":
             "use -n/--name in combination with --resume_from_checkpoint"
         )
     if opt.resume:
+        print(f"DEBUG: opt.resume provided: '{opt.resume}'")
         if not os.path.exists(opt.resume):
             # Attempt fuzzy search in logdir
             print(f"Path '{opt.resume}' not found. Searching in {opt.logdir} for matches...")
@@ -545,6 +546,7 @@ if __name__ == "__main__":
             else:
                 opt.resume = matches[0]
                 print(f"Resuming from detected path: {opt.resume}")
+
         if os.path.isfile(opt.resume):
             paths = opt.resume.split("/")
             # idx = len(paths)-paths[::-1].index("logs")+1
@@ -555,6 +557,8 @@ if __name__ == "__main__":
             assert os.path.isdir(opt.resume), opt.resume
             logdir = opt.resume.rstrip("/")
             ckpt = os.path.join(logdir, "checkpoints", "last.ckpt")
+            
+            print(f"DEBUG: Checking for checkpoint at: {ckpt}")
             if not os.path.exists(ckpt):
                 # Search for other checkpoints
                 ckpt_dir = os.path.join(logdir, "checkpoints")
@@ -567,9 +571,11 @@ if __name__ == "__main__":
                 else:
                     print(f"Warning: No valid checkpoints found in '{ckpt_dir}'. Training will start from scratch.")
                     ckpt = None
-
+            else:
+                print("DEBUG: Found last.ckpt")
 
         opt.resume_from_checkpoint = ckpt
+        print(f"DEBUG: opt.resume_from_checkpoint set to: {opt.resume_from_checkpoint}")
         base_configs = sorted(glob.glob(os.path.join(logdir, "configs/*.yaml")))
         opt.base = base_configs + opt.base
         _tmp = logdir.split("/")
