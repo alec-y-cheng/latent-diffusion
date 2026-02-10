@@ -14,6 +14,7 @@ conda activate ldm
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 export CUDA_VISIBLE_DEVICES=0 
+export PYTHONUNBUFFERED=1
 
 $CONDA_PREFIX/bin/python main.py \
   --base configs/latent-diffusion/cfd_ldm.yaml \
