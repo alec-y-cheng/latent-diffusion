@@ -555,6 +555,19 @@ if __name__ == "__main__":
             assert os.path.isdir(opt.resume), opt.resume
             logdir = opt.resume.rstrip("/")
             ckpt = os.path.join(logdir, "checkpoints", "last.ckpt")
+            if not os.path.exists(ckpt):
+                # Search for other checkpoints
+                ckpt_dir = os.path.join(logdir, "checkpoints")
+                all_ckpts = sorted(glob.glob(os.path.join(ckpt_dir, "*.ckpt")))
+                if all_ckpts:
+                    # Filter out any files that aren't real checkpoints if necessary, or just take last
+                    # Assuming "{epoch:06}" format used in config
+                    ckpt = all_ckpts[-1]
+                    print(f"last.ckpt not found. Resuming from latest detected checkpoint: {ckpt}")
+                else:
+                    print(f"Warning: No valid checkpoints found in '{ckpt_dir}'. Training will start from scratch.")
+                    ckpt = None
+
 
         opt.resume_from_checkpoint = ckpt
         base_configs = sorted(glob.glob(os.path.join(logdir, "configs/*.yaml")))
@@ -784,7 +797,15 @@ if __name__ == "__main__":
         # run
         if opt.train:
             try:
-                trainer.fit(model, data)
+                ckpt_resume_path = getattr(opt, "resume_from_checkpoint", None)
+                if ckpt_resume_path and os.path.isfile(ckpt_resume_path):
+                    print(f"Resuming training from checkpoint: {ckpt_resume_path}")
+                    if version.parse(pl.__version__) >= version.parse("1.4.0"):
+                        trainer.fit(model, data, ckpt_path=ckpt_resume_path)
+                    else:
+                        trainer.fit(model, data)
+                else:
+                    trainer.fit(model, data)
             except Exception:
                 melk()
                 raise
