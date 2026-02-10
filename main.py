@@ -535,7 +535,16 @@ if __name__ == "__main__":
         )
     if opt.resume:
         if not os.path.exists(opt.resume):
-            raise ValueError("Cannot find {}".format(opt.resume))
+            # Attempt fuzzy search in logdir
+            print(f"Path '{opt.resume}' not found. Searching in {opt.logdir} for matches...")
+            matches = glob.glob(os.path.join(opt.logdir, "*" + opt.resume + "*"))
+            if len(matches) == 0:
+                raise ValueError("Cannot find {}".format(opt.resume))
+            elif len(matches) > 1:
+                raise ValueError(f"Resume argument '{opt.resume}' is ambiguous. Found multiple matches in '{opt.logdir}':\n" + "\n".join(matches))
+            else:
+                opt.resume = matches[0]
+                print(f"Resuming from detected path: {opt.resume}")
         if os.path.isfile(opt.resume):
             paths = opt.resume.split("/")
             # idx = len(paths)-paths[::-1].index("logs")+1
