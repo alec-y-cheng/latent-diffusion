@@ -73,145 +73,172 @@ class CFDValidation(CFDDataset):
         super().__init__(data_path=data_path, split="validation", **kwargs)
 
 class CFDConditionalDataset(Dataset):
-    def __init__(self, data_path, split="train", split_ratio=0.9):
+    def __init__(self, data_path, split="train", split_ratio=0.9, augment=False):
         """
         Custom Dataset for Conditional CFD Generation.
-        Supports single .npz or directory of .npz files.
-        Uses mmap_mode='r' to handle large augmented datasets.
+        Supports single .npz or directory.
+        Uses mmap_mode='r' to handle large datasets.
         """
         self.split = split
         self.split_ratio = split_ratio
+        self.augment = augment  # Only augment if True (Training)
         
         # 1. Identify Files
-        # We look for *_X.npy and assume matching *_Y.npy exists.
         if os.path.isdir(data_path):
-            x_files = sorted([os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('_X.npy')])
+            # Look for ANY .npz or data_orig_X.npy or just accept the folder
+            # If user passes 'data/augmented', we might find multiple parts.
+            # If user passes 'data/full_dataset.npz', handle that too.
+            # Let's support both:
+            files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('.npz')]
+            npy_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('_X.npy')]
+        elif os.path.isfile(data_path):
+             files = [data_path]
+             npy_files = []
         else:
-            # If pointing to a single file pair prefix? Or just assume folder always.
-            # Fallback if user points to a file ... likely won't happen if config points to folder
-            if data_path.endswith('_X.npy'):
-                x_files = [data_path]
-            else:
-                x_files = [data_path] # Might fail if not X.npy
+             files = []
+             npy_files = []
 
-        print(f"CFDConditional: Found {len(x_files)} X-files.")
+        self.data_sources = [] # List of (X_mmap, Y_mmap)
+        self.sample_indices = [] # List of (source_idx, sample_idx)
         
-        self.data_chunks_x = []
-        self.data_chunks_y = []
-        self.chunk_sizes = []
-        
-        total_samples = 0
-        
-        # 2. Map Files
-        for fpath_x in x_files:
+        # Helper to load
+        def load_source(fpath):
             try:
-                # Deduce Y path: data_mode_X.npy -> data_mode_Y.npy
-                fpath_y = fpath_x.replace('_X.npy', '_Y.npy')
-                
-                if not os.path.exists(fpath_y):
-                    print(f"Skipping {fpath_x}: Missing corresponding {fpath_y}")
-                    continue
-
-                # Use mmap_mode='r' - crucial for large datasets!
-                # .npy mmap is efficient and uses minimal RAM.
-                raw_x = np.load(fpath_x, mmap_mode='r')
-                raw_y = np.load(fpath_y, mmap_mode='r')
-
-                # Squeeze Singleton (N, 1, 8, ...) -> (N, 8, ...) if present
-                if len(raw_x.shape) == 5 and raw_x.shape[1] == 1:
-                    raw_x = raw_x.squeeze(axis=1) # View, efficient
-                
-                # Check consistency
-                if raw_x.shape[0] != raw_y.shape[0]:
-                    print(f"Skipping {fpath_x}: Size mismatch X={raw_x.shape}, Y={raw_y.shape}")
-                    continue
-                
-                self.data_chunks_x.append(raw_x)
-                self.data_chunks_y.append(raw_y)
-                self.chunk_sizes.append(raw_x.shape[0])
-                total_samples += raw_x.shape[0]
-                
+                if fpath.endswith('.npz'):
+                    data = np.load(fpath, mmap_mode='r')
+                    if 'X' in data and 'Y' in data:
+                        return data['X'], data['Y']
+                    elif 'arr_0' in data: # Fallback
+                        return data['arr_0'], data['arr_1'] if 'arr_1' in data else None
+                elif fpath.endswith('_X.npy'):
+                    y_path = fpath.replace('_X.npy', '_Y.npy')
+                    if os.path.exists(y_path):
+                         X = np.load(fpath, mmap_mode='r')
+                         Y = np.load(y_path, mmap_mode='r')
+                         return X, Y
             except Exception as e:
-                print(f"Error mapping {fpath_x}: {e}")
+                print(f"Error loading {fpath}: {e}")
+            return None, None
 
-        # 3. Stratified Split (Ensure every file contributes to both Train and Val)
-        self.indices = []
+        # Load all sources
+        sources_to_check = files + npy_files
+        print(f"Dataset {split}: Found {len(sources_to_check)} potential files.")
         
-        for i, size in enumerate(self.chunk_sizes):
-            # Calculate split point for THIS chunk
-            split_point = int(size * self.split_ratio)
+        for f in sources_to_check:
+            X, Y = load_source(f)
+            if X is not None and Y is not None:
+                # Handle singleton
+                if X.ndim == 5 and X.shape[1] == 1:
+                    pass # We will index [i, 0] later or wrapper handles it? 
+                    # Actually mmap slicing is tricky if we reshape. 
+                    # Let's just store as is and handle in __getitem__
+                    pass
+                
+                # Check lengths
+                n_samples = X.shape[0]
+                source_idx = len(self.data_sources)
+                self.data_sources.append((X, Y))
+                
+                # Split indices
+                split_point = int(n_samples * self.split_ratio)
+                if self.split == "train":
+                    indices = range(0, split_point)
+                else:
+                    indices = range(split_point, n_samples)
+                    
+                for i in indices:
+                    self.sample_indices.append((source_idx, i))
+
+        print(f"Dataset ({split}): Total Samples={len(self.sample_indices)} (Augment={self.augment})")
+        
+        # Stats (Approximate from first source)
+        if len(self.data_sources) > 0:
+            X0, Y0 = self.data_sources[0]
+            # Just take first few
+            sampX = X0[:min(100, len(X0))]
+            if sampX.ndim == 5: sampX = sampX[:, 0]
             
-            if self.split == "train":
-                # Add range [0, split_point)
-                for local_idx in range(0, split_point):
-                    self.indices.append((i, local_idx))
-            else:
-                # Add range [split_point, size)
-                for local_idx in range(split_point, size):
-                    self.indices.append((i, local_idx))
+            sampY = Y0[:min(100, len(Y0))]
             
-        self.length = len(self.indices)
-        print(f"CFDConditional ({self.split}): Total={self.length} (Stratified across {len(x_files)} files)")
-
-        # 4. Normalization Stats (Compute from FIRST chunk as approximation)
-        ref_x = self.data_chunks_x[0]
-        ref_y = self.data_chunks_y[0]
-        
-        limit = min(500, ref_x.shape[0])
-        stat_x = ref_x[:limit]
-        stat_y = ref_y[:limit]
-        
-        self.min_y = np.min(stat_y)
-        self.max_y = np.max(stat_y)
-        self.range_y = self.max_y - self.min_y
-        if self.range_y == 0: self.range_y = 1e-6
-
-        self.min_x = np.min(stat_x, axis=(0, 2, 3)).reshape(-1, 1, 1)
-        self.max_x = np.max(stat_x, axis=(0, 2, 3)).reshape(-1, 1, 1)
-        self.range_x = self.max_x - self.min_x
-        self.range_x[self.range_x == 0] = 1e-6
+            self.min_val = np.min(sampY)
+            self.max_val = np.max(sampY)
+            self.range_y = self.max_val - self.min_val
+            if self.range_y == 0: self.range_y = 1e-6
+            
+            # X stats per channel or global? 
+            # Global usually safer for stability unless channels very different
+            self.min_x = np.min(sampX) # Simple global min/max for now
+            self.max_x = np.max(sampX)
+            self.range_x = self.max_x - self.min_x
+            if self.range_x == 0: self.range_x = 1e-6
+        else:
+            self.min_val, self.max_val, self.range_y = -1, 1, 2
+            self.min_x, self.max_x, self.range_x = -1, 1, 2
 
     def __len__(self):
-        return self.length
+        return len(self.sample_indices)
 
     def __getitem__(self, idx):
-        # Retrieve mapped placement
-        chunk_idx, local_idx = self.indices[idx]
-            
-        # Get data
-        # Note: mmap access involves disk seek. 
-        raw_x = self.data_chunks_x[chunk_idx][local_idx] # (8, 504, 504)
-        raw_y = self.data_chunks_y[chunk_idx][local_idx] # (1, 504, 504)
+        source_idx, local_idx = self.sample_indices[idx]
+        X_source, Y_source = self.data_sources[source_idx]
         
-        # Convert to float array (loads into RAM)
-        x = np.array(raw_x, dtype=np.float32)
-        y = np.array(raw_y, dtype=np.float32)
+        # Load raw data (this reads from disk)
+        raw_x = np.array(X_source[local_idx]) # (C, H, W) or (1, C, H, W)
+        raw_y = np.array(Y_source[local_idx]) # (1, H, W)
+        
+        if raw_x.ndim == 4: raw_x = raw_x[0] # Squeeze singleton (1, 8, 504, 504) -> (8, 504, 504)
+        if raw_y.ndim == 4: raw_y = raw_y[0]
+        
+        # Augmentation (On-the-fly)
+        if self.augment:
+            # 1. Flip H
+            if np.random.rand() < 0.5:
+                raw_x = raw_x[:, :, ::-1]
+                raw_y = raw_y[:, :, ::-1]
+                # Invert X-components and Sin
+                # Indices: 4 (X_local), 6 (Sin) - Assuming these indices from previous discussion
+                raw_x[4] *= -1
+                raw_x[6] *= -1
+
+            # 2. Flip V
+            if np.random.rand() < 0.5:
+                raw_x = raw_x[:, ::-1, :]
+                raw_y = raw_y[:, ::-1, :]
+                # Invert Y-components and Cos
+                # Indices: 5 (Y_local), 7 (Cos)
+                raw_x[5] *= -1
+                raw_x[7] *= -1
+                
+            # 3. Rotate 90 (Optional, can replace FlipHV)
+            # if np.random.rand() < 0.5: ... (handling vector rotation is tricky, stick to flips for now as they cover 4 quadrants)
+
+        # Convert to Tensor
+        x = torch.from_numpy(raw_x.copy()).float()
+        y = torch.from_numpy(raw_y.copy()).float()
         
         # Normalize
-        y = (y - self.min_y) / self.range_y 
-        y = y * 2.0 - 1.0 
-        y = torch.from_numpy(y).float()
+        y = (y - self.min_val) / self.range_y
+        y = y * 2.0 - 1.0
         
         x = (x - self.min_x) / self.range_x
         x = x * 2.0 - 1.0
-        x = torch.from_numpy(x).float()
-
-        # Resize Y to 512x512
+        
+        # Resize
+        # Y -> 512 (Model Output)
+        # X -> 64  (Conditioning)
         y = torch.nn.functional.interpolate(y.unsqueeze(0), size=(512, 512), mode='bilinear', align_corners=False).squeeze(0)
-
-        # Resize X to 64x64
         cond = torch.nn.functional.interpolate(x.unsqueeze(0), size=(64, 64), mode='bilinear', align_corners=False).squeeze(0)
-
+        
         # Permute to Channels Last (H, W, C)
         y = y.permute(1, 2, 0)
         cond = cond.permute(1, 2, 0)
-
+        
         return {"image": y, "cond": cond}
 
 class CFDConditionalTrain(CFDConditionalDataset):
     def __init__(self, data_path, **kwargs):
-        super().__init__(data_path=data_path, split="train", **kwargs)
+        super().__init__(data_path=data_path, split="train", augment=True, **kwargs)
 
 class CFDConditionalValidation(CFDConditionalDataset):
     def __init__(self, data_path, **kwargs):
-        super().__init__(data_path=data_path, split="validation", **kwargs)
+        super().__init__(data_path=data_path, split="validation", augment=False, **kwargs)

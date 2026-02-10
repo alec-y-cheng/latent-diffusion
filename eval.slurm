@@ -18,4 +18,5 @@ $CONDA_PREFIX/bin/python eval_metrics.py \
   --config $CONFIG \
   --ckpt $CKPT \
   --outdir eval_results \
-  --num_samples 200
+  --num_samples 200 \
+  "$@"
