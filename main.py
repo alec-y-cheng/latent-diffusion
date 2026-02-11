@@ -806,7 +806,7 @@ if __name__ == "__main__":
                         trainer.fit(model, data, ckpt_path=ckpt_resume_path)
                     else:
                         print(f"Using lagacy resume (PL version {pl.__version__})")
-                        trainer.resume_from_checkpoint = ckpt_resume_path
+                        trainer.checkpoint_connector.resume_checkpoint_path = ckpt_resume_path
                         trainer.fit(model, data)
                 else:
                     trainer.fit(model, data)
