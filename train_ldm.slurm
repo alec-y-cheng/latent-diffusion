@@ -17,11 +17,6 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 export CUDA_VISIBLE_DEVICES=0 
 export PYTHONUNBUFFERED=1
 
-echo "Diagnostic: Checking main.py on compute node"
-ls -l main.py
-grep "DEBUG: opt.resume provided" main.py || echo "WARNING: New code NOT found in main.py on this node!"
-rm -rf __pycache__
-
 # Construct arguments
 ARGS="--base configs/latent-diffusion/cfd_ldm.yaml -t --gpus 0,"
 

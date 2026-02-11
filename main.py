@@ -801,9 +801,12 @@ if __name__ == "__main__":
                 ckpt_resume_path = getattr(opt, "resume_from_checkpoint", None)
                 if ckpt_resume_path and os.path.isfile(ckpt_resume_path):
                     print(f"Resuming training from checkpoint: {ckpt_resume_path}")
-                    if version.parse(pl.__version__) >= version.parse("1.4.0"):
+                    # ckpt_path argument for fit was introduced in 1.5.0, not 1.4.0
+                    if version.parse(pl.__version__) >= version.parse("1.5.0"):
                         trainer.fit(model, data, ckpt_path=ckpt_resume_path)
                     else:
+                        print(f"Using lagacy resume (PL version {pl.__version__})")
+                        trainer.resume_from_checkpoint = ckpt_resume_path
                         trainer.fit(model, data)
                 else:
                     trainer.fit(model, data)
