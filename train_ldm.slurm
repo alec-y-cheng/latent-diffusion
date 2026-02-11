@@ -11,6 +11,7 @@
 module load cuda/11.8
 source $HOME/.bashrc
 conda activate ldm
+echo "Script arguments: $@"
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 export CUDA_VISIBLE_DEVICES=0 
