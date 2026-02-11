@@ -473,7 +473,6 @@ class CUDACallback(Callback):
 
 
 if __name__ == "__main__":
-    print(f"DEBUG: sys.argv: {sys.argv}")
     # custom parser to specify config files, train, test and debug mode,
     # postfix, resume.
     # `--key value` arguments are interpreted as arguments to the trainer.
@@ -535,7 +534,6 @@ if __name__ == "__main__":
             "use -n/--name in combination with --resume_from_checkpoint"
         )
     if opt.resume:
-        print(f"DEBUG: opt.resume provided: '{opt.resume}'")
         if not os.path.exists(opt.resume):
             # Attempt fuzzy search in logdir
             print(f"Path '{opt.resume}' not found. Searching in {opt.logdir} for matches...")
@@ -559,7 +557,6 @@ if __name__ == "__main__":
             logdir = opt.resume.rstrip("/")
             ckpt = os.path.join(logdir, "checkpoints", "last.ckpt")
             
-            print(f"DEBUG: Checking for checkpoint at: {ckpt}")
             if not os.path.exists(ckpt):
                 # Search for other checkpoints
                 ckpt_dir = os.path.join(logdir, "checkpoints")
@@ -572,11 +569,8 @@ if __name__ == "__main__":
                 else:
                     print(f"Warning: No valid checkpoints found in '{ckpt_dir}'. Training will start from scratch.")
                     ckpt = None
-            else:
-                print("DEBUG: Found last.ckpt")
-
+            
         opt.resume_from_checkpoint = ckpt
-        print(f"DEBUG: opt.resume_from_checkpoint set to: {opt.resume_from_checkpoint}")
         base_configs = sorted(glob.glob(os.path.join(logdir, "configs/*.yaml")))
         opt.base = base_configs + opt.base
         _tmp = logdir.split("/")
