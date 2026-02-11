@@ -473,6 +473,7 @@ class CUDACallback(Callback):
 
 
 if __name__ == "__main__":
+    print(f"DEBUG: sys.argv: {sys.argv}")
     # custom parser to specify config files, train, test and debug mode,
     # postfix, resume.
     # `--key value` arguments are interpreted as arguments to the trainer.
