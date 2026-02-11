@@ -22,9 +22,19 @@ ls -l main.py
 grep "DEBUG: opt.resume provided" main.py || echo "WARNING: New code NOT found in main.py on this node!"
 rm -rf __pycache__
 
-$CONDA_PREFIX/bin/python main.py \
-  --base configs/latent-diffusion/cfd_ldm.yaml \
-  -t \
-  --gpus 0, \
-  #--resume logs/2026-02-02T01-45-25_cfd_ldm/checkpoints/last.ckpt \
-  "$@"
+# Construct arguments
+ARGS="--base configs/latent-diffusion/cfd_ldm.yaml -t --gpus 0,"
+
+if [ ! -z "$RESUME" ]; then
+  echo "Resuming from: $RESUME"
+  ARGS="$ARGS --resume $RESUME"
+fi
+
+if [ ! -z "$EXTRA_ARGS" ]; then
+  echo "Applying extra arguments: $EXTRA_ARGS"
+  ARGS="$ARGS $EXTRA_ARGS"
+fi
+
+echo "Running command: $CONDA_PREFIX/bin/python main.py $ARGS $@"
+
+$CONDA_PREFIX/bin/python main.py $ARGS "$@"
