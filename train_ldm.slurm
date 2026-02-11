@@ -26,15 +26,18 @@ rm -rf __pycache__
 ARGS="--base configs/latent-diffusion/cfd_ldm.yaml -t --gpus 0,"
 
 if [ ! -z "$RESUME" ]; then
+  echo "DEBUG: RESUME variable found: '$RESUME'"
   echo "Resuming from: $RESUME"
   ARGS="$ARGS --resume $RESUME"
 fi
 
 if [ ! -z "$EXTRA_ARGS" ]; then
+  echo "DEBUG: EXTRA_ARGS variable found: '$EXTRA_ARGS'"
   echo "Applying extra arguments: $EXTRA_ARGS"
   ARGS="$ARGS $EXTRA_ARGS"
 fi
 
+echo "DEBUG: Final Python Arguments: $ARGS $@"
 echo "Running command: $CONDA_PREFIX/bin/python main.py $ARGS $@"
 
 $CONDA_PREFIX/bin/python main.py $ARGS "$@"
