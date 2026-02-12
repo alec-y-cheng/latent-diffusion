@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:H200:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=256G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/inference_%j.out
 
 module load cuda/11.8

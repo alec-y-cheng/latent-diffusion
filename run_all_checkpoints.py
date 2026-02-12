@@ -16,24 +16,31 @@ EXPERIMENTS = [
     "medlr_lowb_highweight",
     "medlr_lowb_highaux",
     "medlr_lowb_lowaux",
-    "medlr_lowb_noaux"
+    "medlr_lowb_noaux",
+    # Specific run requested by user
+    "2026-02-02T01-45-25_cfd_ldm"
 ]
 
 def find_experiment_artifacts(log_root, exp_name):
     """
     Finds the latest checkpoint and config for a given experiment name.
     """
-    # Pattern matches: timestamp_str_exp_name
-    search_pattern = os.path.join(log_root, f"*_{exp_name}")
-    dirs = glob.glob(search_pattern)
-    
-    if not dirs:
-        return None, None
+    # 1. Try exact path match first
+    exact_path = os.path.join(log_root, exp_name)
+    if os.path.isdir(exact_path):
+         latest_dir = exact_path
+    else:
+        # 2. Pattern matches: timestamp_str_exp_name
+        search_pattern = os.path.join(log_root, f"*_{exp_name}")
+        dirs = glob.glob(search_pattern)
         
-    # Sort by creation time (or name if timestamp is sortable)
-    # Timestamps are YYYY-MM-DDTHH-MM-SS, so string sort works generally
-    dirs.sort(reverse=True)
-    latest_dir = dirs[0]
+        if not dirs:
+            return None, None
+            
+        # Sort by creation time (or name if timestamp is sortable)
+        # Timestamps are YYYY-MM-DDTHH-MM-SS, so string sort works generally
+        dirs.sort(reverse=True)
+        latest_dir = dirs[0]
     
     # Checkpoint
     ckpt_dir = os.path.join(latest_dir, "checkpoints")
