@@ -228,17 +228,129 @@ def main():
         gt_np = x_gt.cpu().numpy()[0, 0]
         
         # Visualization Input (Conditioning)
-        # Try to visualize channel 5 (U_over_Uref) or 0
-        cond_chan = 5 if cond.shape[1] > 5 else 0
-        cond_lowres = cond.cpu().numpy()[0, cond_chan]
-        
-        # Resize cond for visualization (High Res)
-        # Simple upscale
-        import cv2
-        cond_vis = cv2.resize(cond_lowres, (pred_np.shape[1], pred_np.shape[0]), interpolation=cv2.INTER_NEAREST)
+        # Attempt to visualize Vector Field (U, V) if present (Channels 4, 5)
+        do_quiver = False
+        if cond.shape[0] >= 6:
+            # U = Channel 4, V = Channel 5 (from cfd_data.py flip logic)
+            u_low = cond.cpu().numpy()[0, 4]
+            v_low = cond.cpu().numpy()[0, 5]
+            do_quiver = True
+            
+            # Mask (Channel 0) for background
+            bg_low = cond.cpu().numpy()[0, 0]
+        elif cond.shape[0] > 0:
+            bg_low = cond.cpu().numpy()[0, 0]
+        else:
+            bg_low = np.zeros_like(pred_np)
 
+        # Resize for visualization (High Res)
+        import cv2
+        H_disp, W_disp = pred_np.shape[0], pred_np.shape[1]
+        bg_vis = cv2.resize(bg_low, (W_disp, H_disp), interpolation=cv2.INTER_NEAREST)
+        
         save_path = os.path.join(args.outdir, f"test_sample_{i:03d}_idx_{idx}.png")
-        save_standardized_plot(gt_np, pred_np, save_path, input_vis=cond_vis)
+        
+        # We need to pass data to plotting function or handle plot here
+        # Let's update save_standardized_plot to accept vector field data
+        
+        # --- Metrics ---
+        diff = pred_np - gt_np # Re-calc here for scope
+        
+        # --- Plot ---
+        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+        
+        # Panel 1: Input (Vector Field)
+        ax0 = axes[0]
+        ax0.imshow(bg_vis, cmap='gray', origin='lower', alpha=0.5) # Background mask
+        if do_quiver:
+            # Downsample for cleaner quiver (every 16th pixel maybe?)
+            step = 16
+            Y, X = np.mgrid[0:H_disp:step, 0:W_disp:step]
+            
+            # Resize U, V to match display size first
+            u_vis = cv2.resize(u_low, (W_disp, H_disp), interpolation=cv2.INTER_LINEAR)
+            v_vis = cv2.resize(v_low, (W_disp, H_disp), interpolation=cv2.INTER_LINEAR)
+            
+            U = u_vis[::step, ::step]
+            V = v_vis[::step, ::step]
+            
+            ax0.quiver(X, Y, U, V, color='red', scale=20, width=0.005)
+            ax0.set_title("Input (Wind Vectors)")
+        else:
+            ax0.set_title("Input (Mask)")
+            
+        ax0.set_xlim(0, W_disp); ax0.set_ylim(0, H_disp); ax0.set_aspect('equal')
+        add_border(ax0)
+        
+        # Panel 2: GT
+        ax1 = axes[1]
+        im1 = ax1.imshow(gt_np, origin='lower', cmap='viridis')
+        ax1.set_title("Ground Truth")
+        add_border(ax1)
+        plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+
+        # Panel 3: Pred
+        ax2 = axes[2]
+        im2 = ax2.imshow(pred_np, origin='lower', cmap='viridis')
+        ax2.set_title("Prediction")
+        add_border(ax2)
+        plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+
+        # Panel 4: Diff + Metrics
+        # Recalculate metrics locally as previous code did
+        # (This block duplicates some metric logic but keeps flow simple)
+        # We rely on metrics calculated before... wait, need to pass them or recalc
+        # Re-using variables from scope: mae, rmse, etc. calculated above?
+        # AHH, save_standardized_plot does metrics internaly.
+        # I should modify save_standardized_plot instead... 
+        
+        # ... actually, refactoring save_standardized_plot is cleaner.
+        # But for now, let's just use the existing function and pass the quiver data via a hack 
+        # OR inline the plotting here.
+        # Inline is safer to match user request quickly.
+        
+        # Re-calc metrics (copy-paste logic for safety)
+        diff = pred_np - gt_np
+        H, W = gt_np.shape
+        center_y, center_x = H // 2, W // 2
+        radius = min(H, W) // 2
+        Y_coords, X_coords = np.ogrid[:H, :W]
+        dist = np.sqrt((X_coords - center_x)**2 + (Y_coords - center_y)**2)
+        domain_mask = dist < radius
+        diff_masked = diff[domain_mask]
+        abs_diff_masked = np.abs(diff_masked)
+        mae = np.mean(abs_diff_masked)
+        rmse = np.sqrt(np.mean(diff_masked**2))
+        gt_masked = gt_np[domain_mask]
+        gt_abs = np.abs(gt_masked)
+        valid_for_mape = gt_abs > 0.1
+        if np.any(valid_for_mape):
+            mape = np.mean(abs_diff_masked[valid_for_mape] / gt_abs[valid_for_mape]) * 100.0
+        else:
+            mape = 0.0
+        if ssim_func:
+            data_range = max(gt_np.max(), pred_np.max()) - min(gt_np.min(), pred_np.min())
+            if data_range == 0: data_range = 1.0
+            ssim_val = ssim_func(gt_np, pred_np, data_range=data_range)
+        else:
+            ssim_val = -1.0
+        grad_corr = compute_gradient_correlation(pred_np, gt_np, domain_mask)
+        
+        # Panel 4 again
+        ax3 = axes[3]
+        max_val = max(abs(diff.min()), abs(diff.max())) if diff.size > 0 else 1.0
+        im3 = ax3.imshow(diff, cmap='RdBu', vmin=-max_val, vmax=max_val, origin='lower')
+        ax3.set_title("Diff (Pred - GT)")
+        metrics_text = (f"MAE:{mae:.3f} | RMSE:{rmse:.3f} | MAPE:{mape:.1f}%\n"
+                        f"SSIM:{ssim_val:.3f} | GradCorr:{grad_corr:.3f}")
+        ax3.set_xlabel(metrics_text, fontsize=9, family='monospace',
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.85))
+        add_border(ax3)
+        plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+        
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.close()
         
     print(f"Done. Results saved to {args.outdir}")
 
