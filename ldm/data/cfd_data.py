@@ -122,7 +122,8 @@ class CFDConditionalDataset(Dataset):
 
         # Load all sources
         sources_to_check = files + npy_files
-        print(f"Dataset {split}: Found {len(sources_to_check)} potential files.")
+        print(f"Dataset ({split}) source path: '{data_path}'")
+        print(f"Dataset ({split}): Found {len(sources_to_check)} potential files.")
         
         for f in sources_to_check:
             X, Y = load_source(f)

@@ -161,6 +161,7 @@ def main():
     parser.add_argument("--outdir", type=str, default="test_results", help="Output directory")
     parser.add_argument("--steps", type=int, default=50, help="DDIM Steps")
     parser.add_argument("--num_samples", type=int, default=5, help="Number of random samples to test")
+    parser.add_argument("--data_path", type=str, default=None, help="Override dataset path from config")
     args = parser.parse_args()
     
     os.makedirs(args.outdir, exist_ok=True)
@@ -180,10 +181,21 @@ def main():
     # 2. Load Validation Dataset
     print("Loading Validation Dataset...")
     dataset_conf = config.data.params.validation
+    
+    # Override data path if provided
+    if args.data_path:
+        print(f"Overriding dataset path with: {args.data_path}")
+        dataset_conf.params.data_path = args.data_path
+    
     dataset = instantiate_from_config(dataset_conf)
     
     # 3. Select Random Indices
     total_len = len(dataset)
+    if total_len == 0:
+        print(f"CRITICAL ERROR: Dataset is empty! loaded from {dataset_conf.params.data_path}")
+        print("Please check if the file exists or provide --data_path argument.")
+        return
+
     indices = np.random.choice(total_len, args.num_samples, replace=False)
     print(f"Selected indices: {indices}")
     
