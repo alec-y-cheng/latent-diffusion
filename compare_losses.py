@@ -54,8 +54,13 @@ def compare_models(folder_path, output_path):
         print("No valid data to plot.")
 
 if __name__ == "__main__":
-    # Default Paths
-    DEFAULT_FOLDER = "/Users/dcheng/latent-diffusion/results"
-    DEFAULT_OUTPUT = "/Users/dcheng/latent-diffusion/results/model_comparison.png"
+    parser = argparse.ArgumentParser(description="Compare validation losses from CSV logs.")
+    parser.add_argument("--folder", type=str, default="/Users/dcheng/latent-diffusion/metrics", help="Folder containing CSV files")
+    parser.add_argument("--output", type=str, default="/Users/dcheng/latent-diffusion/metrics/model_comparison.png", help="Output path for the plot")
     
-    compare_models(DEFAULT_FOLDER, DEFAULT_OUTPUT)
+    args = parser.parse_args()
+    
+    # ensure output directory exists
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    
+    compare_models(args.folder, args.output)

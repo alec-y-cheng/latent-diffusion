@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import os
 
 # File path
-csv_path = r"/Users/dcheng/latent-diffusion/results/metrics_new.csv"
-output_path = r"/Users/dcheng/latent-diffusion/results/loss_comparison_plot.png"
+csv_path = r"/Users/dcheng/latent-diffusion/metrics/base.csv"
+output_path = r"/Users/dcheng/latent-diffusion/metrics/base.png"
 
 # Load data
 try:
