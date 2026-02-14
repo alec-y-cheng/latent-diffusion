@@ -24,6 +24,7 @@ from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianD
 from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, AutoencoderKL
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.modules.losses.grad_corr import GradCorrLoss
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -435,9 +436,13 @@ class LatentDiffusion(DDPM):
                  conditioning_key=None,
                  scale_factor=1.0,
                  scale_by_std=False,
+                 grad_corr_weight=0.0,
                  *args, **kwargs):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
+        self.grad_corr_weight = grad_corr_weight
+        if self.grad_corr_weight > 0:
+            self.grad_corr_loss = GradCorrLoss()
         assert self.num_timesteps_cond <= kwargs['timesteps']
         # for backwards compatibility after implementation of DiffusionWrapper
         if conditioning_key is None:
@@ -702,6 +707,56 @@ class LatentDiffusion(DDPM):
         if return_original_cond:
             out.append(xc)
         return out
+
+    def p_losses(self, x_start, t, noise=None):
+        noise = default(noise, lambda: torch.randn_like(x_start))
+        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
+        model_out = self.model(x_noisy, t)
+
+        loss_dict = {}
+        if self.parameterization == "eps":
+            target = noise
+        elif self.parameterization == "x0":
+            target = x_start
+        else:
+            raise NotImplementedError(f"Paramterization {self.parameterization} not yet supported")
+
+        loss = self.get_loss(model_out, target, mean=False).mean(dim=[1, 2, 3])
+
+        log_prefix = 'train' if self.training else 'val'
+
+        loss_dict.update({f'{log_prefix}/loss_simple': loss.mean()})
+        loss_dict.update({f'{log_prefix}/loss_rmse': torch.sqrt(loss.mean())})
+        loss_simple = loss.mean() * self.l_simple_weight
+
+        loss_vlb = (self.lvlb_weights[t] * loss).mean()
+        loss_dict.update({f'{log_prefix}/loss_vlb': loss_vlb})
+
+        loss = loss_simple + self.original_elbo_weight * loss_vlb
+
+        # --- GradCorr Loss Integration ---
+        if self.grad_corr_weight > 0:
+            # 1. Reconstruct x0 (latent)
+            if self.parameterization == "eps":
+                x_recon = self.predict_start_from_noise(x_noisy, t=t, noise=model_out)
+            elif self.parameterization == "x0":
+                x_recon = model_out
+            
+            # 2. Decode to Pixel Space
+            # Use differentiable decode
+            x_recon_pixel = self.differentiable_decode_first_stage(x_recon)
+            x_start_pixel = self.differentiable_decode_first_stage(x_start)
+            
+            # 3. Compute Loss
+            gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel)
+            
+            loss_dict.update({f'{log_prefix}/loss_grad_corr': gc_loss})
+            
+            loss = loss + self.grad_corr_weight * gc_loss
+
+        loss_dict.update({f'{log_prefix}/loss': loss})
+
+        return loss, loss_dict
 
     @torch.no_grad()
     def decode_first_stage(self, z, predict_cids=False, force_not_quantize=False):

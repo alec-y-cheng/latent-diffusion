@@ -13,6 +13,7 @@ model:
     channels: 4
     cond_stage_trainable: false
     concat_mode: true
+    grad_corr_weight: 0.0
     monitor: val/loss
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
