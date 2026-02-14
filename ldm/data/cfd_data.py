@@ -196,19 +196,19 @@ class CFDConditionalDataset(Dataset):
             if np.random.rand() < 0.5:
                 raw_x = raw_x[:, :, ::-1]
                 raw_y = raw_y[:, :, ::-1]
-                # Invert X-components and Sin
-                # Indices: 4 (X_local), 6 (Sin) - Assuming these indices from previous discussion
+                # Invert X-components and Cos (Flow X direction)
+                # Indices: 4 (X_local), 7 (Cos)
                 raw_x[4] *= -1
-                raw_x[6] *= -1
+                raw_x[7] *= -1
 
             # 2. Flip V
             if np.random.rand() < 0.5:
                 raw_x = raw_x[:, ::-1, :]
                 raw_y = raw_y[:, ::-1, :]
-                # Invert Y-components and Cos
-                # Indices: 5 (Y_local), 7 (Cos)
+                # Invert Y-components and Sin (Flow Y direction)
+                # Indices: 5 (Y_local), 6 (Sin)
                 raw_x[5] *= -1
-                raw_x[7] *= -1
+                raw_x[6] *= -1
                 
             # 3. Rotate 90 (Optional, can replace FlipHV)
             # if np.random.rand() < 0.5: ... (handling vector rotation is tricky, stick to flips for now as they cover 4 quadrants)

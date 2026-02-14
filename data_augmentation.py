@@ -83,9 +83,9 @@ def augment_dataset(input_path, output_dir):
                 Y_new = Y_new[..., ::-1]
                 
                 # Invert X-components
-                # X_local (4) and Sin (6)
+                # X_local (4) and Cos (7)
                 X_new[:, CH_X, :, :] *= -1
-                X_new[:, CH_SIN, :, :] *= -1
+                X_new[:, CH_COS, :, :] *= -1
                 
             elif mode == "flip_v":
                 # Vertical Flip (Mirror H -> second last dim)
@@ -93,9 +93,9 @@ def augment_dataset(input_path, output_dir):
                 Y_new = Y_new[..., ::-1, :]
                 
                 # Invert Y-components
-                # Y_local (5) and Cos (7)
+                # Y_local (5) and Sin (6)
                 X_new[:, CH_Y, :, :] *= -1
-                X_new[:, CH_COS, :, :] *= -1
+                X_new[:, CH_SIN, :, :] *= -1
                 
             elif mode == "flip_hv":
                 # Rotate 180 (Flip both)
@@ -104,9 +104,9 @@ def augment_dataset(input_path, output_dir):
                 
                 # Invert BOTH X and Y components
                 X_new[:, CH_X, :, :] *= -1
-                X_new[:, CH_SIN, :, :] *= -1
-                X_new[:, CH_Y, :, :] *= -1
                 X_new[:, CH_COS, :, :] *= -1
+                X_new[:, CH_Y, :, :] *= -1
+                X_new[:, CH_SIN, :, :] *= -1
 
             # Restore singleton if needed
             if has_singleton:
