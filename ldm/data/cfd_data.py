@@ -237,8 +237,8 @@ class CFDConditionalDataset(Dataset):
         return {"image": y, "cond": cond}
 
 class CFDConditionalTrain(CFDConditionalDataset):
-    def __init__(self, data_path, **kwargs):
-        super().__init__(data_path=data_path, split="train", augment=True, **kwargs)
+    def __init__(self, data_path, augment=True, **kwargs):
+        super().__init__(data_path=data_path, split="train", augment=augment, **kwargs)
 
 class CFDConditionalValidation(CFDConditionalDataset):
     def __init__(self, data_path, **kwargs):

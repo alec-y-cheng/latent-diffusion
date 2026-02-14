@@ -441,12 +441,9 @@ class LatentDiffusion(DDPM):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
         assert self.num_timesteps_cond <= kwargs['timesteps']
-        assert self.num_timesteps_cond <= kwargs['timesteps']
-        print(f"DEBUG INIT: conditioning_key={conditioning_key}, concat_mode={concat_mode}, cond_stage_config={cond_stage_config}")
         # for backwards compatibility after implementation of DiffusionWrapper
         if conditioning_key is None:
             conditioning_key = 'concat' if concat_mode else 'crossattn'
-        print(f"DEBUG INIT 2: conditioning_key={conditioning_key}")
         if cond_stage_config == '__is_unconditional__':
             conditioning_key = None
         ckpt_path = kwargs.pop("ckpt_path", None)
