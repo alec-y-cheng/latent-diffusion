@@ -72,7 +72,7 @@ class CFDValidation(CFDDataset):
         super().__init__(data_path=data_path, split="validation", **kwargs)
 
 class CFDConditionalDataset(Dataset):
-    def __init__(self, data_path, split="train", split_ratio=0.9):
+    def __init__(self, data_path, split="train", split_ratio=0.9, augment=False):
         """
         Custom Dataset for Conditional CFD Generation.
         Supports single .npz or directory of .npz files.
@@ -80,6 +80,7 @@ class CFDConditionalDataset(Dataset):
         """
         self.split = split
         self.split_ratio = split_ratio
+        self.augment = augment
         
         # 1. Identify Files
         if os.path.isdir(data_path):
