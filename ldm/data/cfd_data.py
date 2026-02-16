@@ -184,6 +184,55 @@ class CFDConditionalDataset(Dataset):
         # Convert to float array (loads into RAM)
         x = np.array(raw_x, dtype=np.float32)
         y = np.array(raw_y, dtype=np.float32)
+
+        # Augmentation (On-the-fly)
+        if self.augment:
+            # 1. Transpose: Swap spatial dims (H, W) -> (W, H)
+            # This allows constructing 90-degree rotations (Transpose + Flip)
+            if np.random.rand() < 0.5:
+                x = np.swapaxes(x, 1, 2) # (C, W, H)
+                y = np.swapaxes(y, 1, 2) # (1, W, H)
+                
+                # Swap Channel X (4) and Y (5)
+                # Swap Channel Cos (7) and Sin (6)
+                # Note: Cos is X-component, Sin is Y-component? Based on data_augmentation.py logic:
+                # Flip H (Invert X) -> Inverts Sin (6). So Sin is X-comp.
+                # Flip V (Invert Y) -> Inverts Cos (7). So Cos is Y-comp.
+                # When swapping axes X<->Y, we must swap their components.
+                x_copy = x.copy()
+                x[4] = x_copy[5] # New X = Old Y
+                x[5] = x_copy[4] # New Y = Old X
+                x[7] = x_copy[6] # New Cos = Old Sin
+                x[6] = x_copy[7] # New Sin = Old Cos
+                del x_copy
+
+            # 2. Random Horizontal Flip (p=0.5)
+            if np.random.rand() < 0.5:
+                # Flip Width (dim 2)
+                x = x[:, :, ::-1]
+                y = y[:, :, ::-1]
+                
+                # Invert X-components (Flow X direction)
+                # Indices: 4 (X_local), 6 (Sin - per data_augmentation.py)
+                x[4] *= -1
+                x[6] *= -1
+
+            # 3. Random Vertical Flip (p=0.5)
+            if np.random.rand() < 0.5:
+                # Flip Height (dim 1)
+                x = x[:, ::-1, :]
+                y = y[:, ::-1, :]
+                
+                # Invert Y-components (Flow Y direction)
+                # Indices: 5 (Y_local), 7 (Cos - per data_augmentation.py)
+                x[5] *= -1
+                x[7] *= -1
+                
+            # Handle negative strides from flipping for torch compatibility
+            if x.strides[1] < 0 or x.strides[2] < 0:
+                 x = x.copy()
+            if y.strides[1] < 0 or y.strides[2] < 0:
+                 y = y.copy()
         
         # Normalize
         y = (y - self.min_y) / self.range_y 
@@ -207,8 +256,8 @@ class CFDConditionalDataset(Dataset):
         return {"image": y, "cond": cond}
 
 class CFDConditionalTrain(CFDConditionalDataset):
-    def __init__(self, data_path, **kwargs):
-        super().__init__(data_path=data_path, split="train", **kwargs)
+    def __init__(self, data_path, augment=True, **kwargs):
+        super().__init__(data_path=data_path, split="train", augment=augment, **kwargs)
 
 class CFDConditionalValidation(CFDConditionalDataset):
     def __init__(self, data_path, **kwargs):
