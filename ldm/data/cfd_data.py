@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+import os
 
 class CFDDataset(Dataset):
     def __init__(self, data_path, split="train", split_ratio=0.9):
