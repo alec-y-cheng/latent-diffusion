@@ -437,11 +437,6 @@ class LatentDiffusion(DDPM):
                  scale_by_std=False,
                  grad_corr_weight=0.0,
                  *args, **kwargs):
-        self.grad_corr_weight = grad_corr_weight
-        if self.grad_corr_weight > 0:
-            print(f"LatentDiffusion: Enabled GradCorrLoss with weight {self.grad_corr_weight}")
-            self.grad_corr_loss = GradCorrLoss()
-        
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
         assert self.num_timesteps_cond <= kwargs['timesteps']
@@ -453,6 +448,12 @@ class LatentDiffusion(DDPM):
         ckpt_path = kwargs.pop("ckpt_path", None)
         ignore_keys = kwargs.pop("ignore_keys", [])
         super().__init__(conditioning_key=conditioning_key, *args, **kwargs)
+        
+        self.grad_corr_weight = grad_corr_weight
+        if self.grad_corr_weight > 0:
+            print(f"LatentDiffusion: Enabled GradCorrLoss with weight {self.grad_corr_weight}")
+            self.grad_corr_loss = GradCorrLoss()
+            
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
         self.cond_stage_key = cond_stage_key
