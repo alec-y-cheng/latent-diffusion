@@ -14,6 +14,7 @@ model:
     cond_stage_trainable: false
     concat_mode: true
     monitor: val/loss
+    grad_corr_weight: 0.0
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:

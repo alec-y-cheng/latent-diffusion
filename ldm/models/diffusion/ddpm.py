@@ -21,6 +21,7 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
 from ldm.modules.ema import LitEma
 from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianDistribution
+from ldm.modules.losses.grad_corr import GradCorrLoss
 from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, AutoencoderKL
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
@@ -434,7 +435,13 @@ class LatentDiffusion(DDPM):
                  conditioning_key=None,
                  scale_factor=1.0,
                  scale_by_std=False,
+                 grad_corr_weight=0.0,
                  *args, **kwargs):
+        self.grad_corr_weight = grad_corr_weight
+        if self.grad_corr_weight > 0:
+            print(f"LatentDiffusion: Enabled GradCorrLoss with weight {self.grad_corr_weight}")
+            self.grad_corr_loss = GradCorrLoss()
+        
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
         assert self.num_timesteps_cond <= kwargs['timesteps']
@@ -1036,10 +1043,32 @@ class LatentDiffusion(DDPM):
 
         loss = self.l_simple_weight * loss.mean()
 
-        loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
         loss_vlb = (self.lvlb_weights.to(t.device)[t] * loss_vlb).mean()
         loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
         loss += (self.original_elbo_weight * loss_vlb)
+        
+        # --- GradCorr Loss Integration ---
+        if self.grad_corr_weight > 0:
+            # 1. Reconstruct x0 (latent)
+            if self.parameterization == "eps":
+                x_recon = self.predict_start_from_noise(x_noisy, t=t, noise=model_output)
+            elif self.parameterization == "x0":
+                x_recon = model_output
+            else:
+                x_recon = None
+            
+            if x_recon is not None:
+                # 2. Decode to Pixel Space
+                x_recon_pixel = self.decode_first_stage(x_recon)
+                x_start_pixel = self.decode_first_stage(x_start)
+                
+                # 3. Compute Loss
+                gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel)
+                
+                loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
+                
+                loss = loss + self.grad_corr_weight * gc_loss
+
         loss_dict.update({f'{prefix}/loss': loss})
 
         return loss, loss_dict
