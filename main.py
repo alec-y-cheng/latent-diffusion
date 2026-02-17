@@ -339,7 +339,15 @@ class ImageLogger(Callback):
 
     def log_img(self, pl_module, batch, batch_idx, split="train"):
         check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
-        if (self.check_frequency(check_idx) and  # batch_idx % self.batch_freq == 0
+        
+        is_val = (split == "val")
+        should_log = self.check_frequency(check_idx)
+        
+        # Always log the first batch of validation
+        if is_val and batch_idx == 0:
+            should_log = True
+            
+        if (should_log and
                 hasattr(pl_module, "log_images") and
                 callable(pl_module.log_images) and
                 self.max_images > 0):
