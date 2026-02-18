@@ -49,7 +49,9 @@ submit_job() {
         fi
     fi
     
-    sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
+    # Locate train_ldm.slurm relative to this script
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+    sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" "$SCRIPT_DIR/train_ldm.slurm"
 }
 
 # Experiment 1
