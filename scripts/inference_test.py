@@ -1,6 +1,8 @@
 
 import argparse
 import os
+import sys
+sys.path.append(os.getcwd()) # Ensure ldm is found
 import torch
 import numpy as np
 from omegaconf import OmegaConf

@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append(os.getcwd()) # Ensure ldm is found
 import argparse
 import glob
 import subprocess
@@ -122,6 +124,9 @@ def main():
     
     for exp_name, runs in groups.items():
         if args.filter and args.filter not in exp_name:
+            continue
+            
+        if "autoencoder" in exp_name.lower():
             continue
             
         # Sort desc
