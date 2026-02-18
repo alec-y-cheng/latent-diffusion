@@ -120,6 +120,9 @@ def main():
     print(f"Found {len(groups)} experiments.")
     
     for exp_name, runs in groups.items():
+        if args.filter and args.filter not in exp_name:
+            continue
+            
         # Sort desc
         runs.sort(key=lambda x: x['timestamp'], reverse=True)
         latest_run = runs[0]
