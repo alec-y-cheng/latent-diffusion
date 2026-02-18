@@ -1,27 +1,80 @@
 #!/bin/bash
-# Experiment 1
-sbatch --export=ALL,EXTRA_ARGS="-n low_grad_corr \
+
+# Usage: ./scripts/submit_gradcorr_runs.sh [--resume]
+
+RESUME_MODE=false
+if [ "$1" == "--resume" ]; then
+    RESUME_MODE=true
+    echo "Resume mode enabled. Searching for latest checkpoints..."
+fi
+
+get_latest_ckpt() {
+    EXP_NAME=$1
+    # Find latest log dir for this experiment
+    LATEST_LOGDIR=$(ls -td logs/*${EXP_NAME}* 2>/dev/null | head -n 1)
+    if [ -z "$LATEST_LOGDIR" ]; then
+        return 1
+    fi
+    
+    # Check for last.ckpt first, then any ckpt
+    CKPT="${LATEST_LOGDIR}/checkpoints/last.ckpt"
+    if [ -f "$CKPT" ]; then
+        echo "$CKPT"
+        return 0
+    fi
+    
+    # Fallback to any ckpt
+    CKPT=$(ls -t ${LATEST_LOGDIR}/checkpoints/*.ckpt 2>/dev/null | head -n 1)
+    if [ ! -z "$CKPT" ]; then
+        echo "$CKPT"
+        return 0
+    fi
+    
+    return 1
+}
+
+submit_job() {
+    NAME=$1
+    ARGS=$2
+    
+    FINAL_ARGS="$ARGS"
+    
+    if [ "$RESUME_MODE" = true ]; then
+        CKPT=$(get_latest_ckpt "$NAME")
+        if [ ! -z "$CKPT" ]; then
+            echo "Resuming $NAME from $CKPT"
+            FINAL_ARGS="$FINAL_ARGS --resume $CKPT"
+        else
+            echo "Warning: No checkpoint found for $NAME. Starting fresh."
+        fi
+    fi
+    
+    sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
+}
+
+# --- Experiment 1: Low GradCorr ---
+submit_job "low_grad_corr" "-n low_grad_corr \
  model.params.grad_corr_weight=0.1 \
  model.base_learning_rate=2.0e-6 \
  data.params.batch_size=16 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=2000 \
- lightning.trainer.log_every_n_steps=50" train_ldm.slurm
+ lightning.trainer.log_every_n_steps=50"
 
-# Experiment 1
-sbatch --export=ALL,EXTRA_ARGS="-n med_grad_corr \
+# --- Experiment 2: Med GradCorr ---
+submit_job "med_grad_corr" "-n med_grad_corr \
  model.params.grad_corr_weight=0.5 \
  model.base_learning_rate=2.0e-6 \
  data.params.batch_size=16 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=2000 \
- lightning.trainer.log_every_n_steps=50" train_ldm.slurm
+ lightning.trainer.log_every_n_steps=50"
 
-# Experiment 1
-sbatch --export=ALL,EXTRA_ARGS="-n high_grad_corr \
+# --- Experiment 3: High GradCorr ---
+submit_job "high_grad_corr" "-n high_grad_corr \
  model.params.grad_corr_weight=1 \
  model.base_learning_rate=2.0e-6 \
  data.params.batch_size=16 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=2000 \
- lightning.trainer.log_every_n_steps=50" train_ldm.slurm
+ lightning.trainer.log_every_n_steps=50"
