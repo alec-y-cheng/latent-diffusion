@@ -10,8 +10,12 @@ fi
 
 get_latest_ckpt() {
     EXP_NAME=$1
+    # Locate logs directory relative to this script (scripts/../logs)
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+    LOGS_DIR="$SCRIPT_DIR/../logs"
+    
     # Find latest log dir for this experiment
-    LATEST_LOGDIR=$(ls -td logs/*${EXP_NAME}* 2>/dev/null | head -n 1)
+    LATEST_LOGDIR=$(ls -td "${LOGS_DIR}"/*${EXP_NAME}* 2>/dev/null | head -n 1)
     if [ -z "$LATEST_LOGDIR" ]; then
         return 1
     fi
