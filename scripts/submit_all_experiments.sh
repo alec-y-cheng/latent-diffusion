@@ -2,6 +2,11 @@
 
 # Usage: ./scripts/submit_all_experiments.sh [--resume]
 
+# Ensure we are in the project root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+cd "$SCRIPT_DIR/.." || exit 1
+echo "Running from project root: $(pwd)"
+
 RESUME_MODE=false
 if [ "$1" == "--resume" ]; then
     RESUME_MODE=true
@@ -10,9 +15,8 @@ fi
 
 get_latest_ckpt() {
     EXP_NAME=$1
-    # Locate logs directory relative to this script (scripts/../logs)
-    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-    LOGS_DIR="$SCRIPT_DIR/../logs"
+    # Check logs directory in current (root) path
+    LOGS_DIR="logs"
     
     # Find latest log dir for this experiment
     LATEST_LOGDIR=$(ls -td "${LOGS_DIR}"/*${EXP_NAME}* 2>/dev/null | head -n 1)
@@ -53,9 +57,8 @@ submit_job() {
         fi
     fi
     
-    # Locate train_ldm.slurm relative to this script
-    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-    sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" "$SCRIPT_DIR/train_ldm.slurm"
+    # Submit train_ldm.slurm which is now in scripts/ relative to root
+    sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
 }
 
 # Experiment 1
