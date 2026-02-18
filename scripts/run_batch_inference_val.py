@@ -97,6 +97,7 @@ def main():
     parser.add_argument("--data_path", type=str, default=None, help="Override validation data path")
     parser.add_argument("--num_samples", type=int, default=5, help="Number of samples to generate")
     parser.add_argument("--steps", type=int, default=50, help="Sampling steps")
+    parser.add_argument("--filter", type=str, default=None, help="Filter experiments by name (partial match)")
     args = parser.parse_args()
     
     # 1. Locate script
