@@ -9,7 +9,9 @@ from ldm.models.diffusion.ddim import DDIMSampler
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from tqdm import tqdm
+import time
 
 try:
     from skimage.metrics import structural_similarity as ssim_func
@@ -229,6 +231,7 @@ def main():
         # Sample
         shape = (model.channels, model.image_size, model.image_size)
         
+        t0 = time.time()
         with torch.no_grad():
             samples_ddim, _ = sampler.sample(S=args.steps,
                                              conditioning=cond,
@@ -236,6 +239,8 @@ def main():
                                              shape=shape,
                                              verbose=False)
             x_samples = model.decode_first_stage(samples_ddim)
+        t1 = time.time()
+        inference_time = t1 - t0
             
         # Post-process (Single Sample)
         pred_np = x_samples.cpu().numpy()[0, 0] # (H, W) or (C, H, W)? Assuming single channel target
@@ -373,7 +378,8 @@ def main():
             "rmse": rmse,
             "mape": mape,
             "ssim": ssim_val,
-            "grad_corr": grad_corr
+            "grad_corr": grad_corr,
+            "inference_time": inference_time
         }
         all_metrics.append(metrics)
         
