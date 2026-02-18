@@ -51,7 +51,7 @@ submit_job() {
         CKPT=$(get_latest_ckpt "$NAME")
         if [ ! -z "$CKPT" ]; then
             echo "Resuming $NAME from $CKPT"
-            FINAL_ARGS="$FINAL_ARGS --resume $CKPT"
+            FINAL_ARGS="$FINAL_ARGS --resume_from_checkpoint $CKPT"
         else
             echo "Warning: No checkpoint found for $NAME. Starting fresh."
         fi
