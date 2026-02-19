@@ -107,7 +107,7 @@ def plot_losses(data, output_path):
             continue
             
         # Clean NaNs (Validation often runs less frequently than training)
-        viz_df = df.dropna(subset=[y_key])
+        viz_df = df.dropna(subset=[y_key]).copy()
         
         if len(viz_df) == 0:
             continue
