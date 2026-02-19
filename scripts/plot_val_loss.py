@@ -90,6 +90,22 @@ def plot_losses(data, output_path):
     # Try looking for 'val/loss_simple', 'val/loss', 'val/rec_loss'
     metric_keys = ['val/loss_simple', 'val/loss', 'val/rec_loss']
     
+    # Color mapping based on "Base Name" (to group connected runs)
+    # e.g. "modelA" and "modelA_resume" -> same color
+    base_names = {}
+    for exp_name in data.keys():
+        base = exp_name
+        # Strip common suffixes
+        for suffix in ["_resume", "_finetune", "_continued", "_v2", "_v3"]:
+            if suffix in base:
+                base = base.replace(suffix, "")
+        base_names[exp_name] = base
+        
+    unique_bases = sorted(list(set(base_names.values())))
+    # Use a high-contrast palette
+    palette = sns.color_palette("tab10", n_colors=len(unique_bases))
+    color_map = {base: palette[i] for i, base in enumerate(unique_bases)}
+    
     plotted_count = 0
     
     for exp_name, df in data.items():
@@ -134,7 +150,8 @@ def plot_losses(data, output_path):
             x_label = "Log Interval"
             
         # Smooth curve slightly?
-        plt.plot(x_axis, viz_df[y_key], label=f"{exp_name}", alpha=0.9, linewidth=1)
+        base_color = color_map[base_names[exp_name]]
+        plt.plot(x_axis, viz_df[y_key], label=f"{exp_name}", alpha=0.9, linewidth=1, color=base_color)
         plotted_count += 1
         
     if plotted_count == 0:
