@@ -30,7 +30,11 @@ echo "Starting Batch Inference on All Latest Checkpoints..."
 # 3. Run inference on each (validation set)
 # 4. Generate 'all_experiments_summary.csv'
 
-python scripts/run_batch_inference_val.py \
+# Run the optimized fast batch script
+# This loads the dataset ONCE and iterates models in the same process
+# avoiding 35-minute startup times per model.
+
+python scripts/fast_batch_inference.py \
     --logs logs \
     --num_samples 50 \
     --steps 50
