@@ -112,6 +112,15 @@ def plot_losses(data, output_path):
         if len(viz_df) == 0:
             continue
             
+        # Smooth the curve
+        # Rolling mean to reduce noise
+        if len(viz_df) > 10:
+            window = 10
+            viz_df[y_key] = viz_df[y_key].rolling(window=window, min_periods=1, center=True).mean()
+            
+            # Subsample (plot every Nth point) after smoothing
+            viz_df = viz_df.iloc[::5] # Plot every 5th point for cleaner graph
+            
         # Plot
         # Use 'epoch' if available, else 'step' or index
         if 'epoch' in viz_df.columns:
@@ -125,7 +134,7 @@ def plot_losses(data, output_path):
             x_label = "Log Interval"
             
         # Smooth curve slightly?
-        plt.plot(x_axis, viz_df[y_key], label=f"{exp_name}", alpha=0.8, linewidth=2)
+        plt.plot(x_axis, viz_df[y_key], label=f"{exp_name}", alpha=0.9, linewidth=1)
         plotted_count += 1
         
     if plotted_count == 0:
