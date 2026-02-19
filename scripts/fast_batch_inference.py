@@ -67,7 +67,26 @@ def get_best_checkpoint(folder):
     
     ckpts = glob.glob(os.path.join(ckpt_dir, "*.ckpt"))
     if not ckpts: return None
-    ckpts.sort(key=os.path.getmtime, reverse=True)
+    
+    # Sort by epoch number manually if possible
+    # Expect filenames like "epoch=000055.ckpt"
+    def get_epoch(path):
+        try:
+            name = os.path.basename(path)
+            # Find "epoch="
+            if "epoch=" in name:
+                # Extract number after "epoch=" until next non-digit
+                part = name.split("epoch=")[1]
+                num = ""
+                for c in part:
+                    if c.isdigit(): num += c
+                    else: break
+                return int(num)
+            return -1
+        except:
+            return -1
+            
+    ckpts.sort(key=get_epoch, reverse=True)
     return ckpts[0]
 
 def get_config_path(folder):
