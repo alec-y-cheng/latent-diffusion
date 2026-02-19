@@ -271,14 +271,24 @@ def main():
 
     for exp_name, runs in groups.items():
         runs.sort(key=lambda x: x['timestamp'], reverse=True)
-        latest_run = runs[0]
+        # Try to find a valid checkpoint in the latest run first
+        # But if the latest run failed (no checkpoints), we should check the next latest one!
+        valid_run = None
+        ckpt = None
         
-        print(f"\n--- Processing: {exp_name} ---")
+        for run in runs:
+            c = get_best_checkpoint(run['path'])
+            if c:
+                valid_run = run
+                ckpt = c
+                break
         
-        ckpt = get_best_checkpoint(latest_run['path'])
-        if not ckpt:
-            print("  No checkpoint found. Skipping.")
+        if not valid_run:
+            print(f"  [Skipping] No checkpoints found in any runs for {exp_name}")
             continue
+            
+        latest_run = valid_run # Use the valid one
+        print(f"  Using checkpoint from run: {latest_run['folder']}")
             
         # Load Model Config (Model architecture might vary, so we load config per model)
         run_config_path = get_config_path(latest_run['path'])
