@@ -102,6 +102,107 @@ def compute_gradient_correlation(pred, true, dmask=None):
         
     return np.corrcoef(pred_grad, true_grad)[0, 1]
 
+def add_border(ax):
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color('black')
+        spine.set_linewidth(1)
+
+def save_standardized_plot(y_true, y_pred, save_path, input_vis=None):
+    if y_true.ndim > 2: y_true = y_true.squeeze()
+    if y_pred.ndim > 2: y_pred = y_pred.squeeze()
+    
+    H, W = y_true.shape
+    diff = y_pred - y_true
+    
+    # --- Domain Masking (Circular) ---
+    center_y, center_x = H // 2, W // 2
+    # radius = min(H, W) // 2 - 5
+    # Use simpler radius logic to avoid issues with non-square
+    radius = min(H, W) // 2
+    Y_coords, X_coords = np.ogrid[:H, :W]
+    dist = np.sqrt((X_coords - center_x)**2 + (Y_coords - center_y)**2)
+    domain_mask = dist < radius
+    
+    # --- Metrics ---
+    diff_masked = diff[domain_mask]
+    abs_diff_masked = np.abs(diff_masked)
+    
+    mae = np.mean(abs_diff_masked)
+    rmse = np.sqrt(np.mean(diff_masked**2))
+    
+    gt_masked = y_true[domain_mask]
+    gt_abs = np.abs(gt_masked)
+    valid_for_mape = gt_abs > 0.1
+    if np.any(valid_for_mape):
+        mape = np.mean(abs_diff_masked[valid_for_mape] / gt_abs[valid_for_mape]) * 100.0
+    else:
+        mape = 0.0
+
+    if ssim_func:
+        data_range = max(y_true.max(), y_pred.max()) - min(y_true.min(), y_pred.min())
+        if data_range == 0: data_range = 1.0
+        ssim_val = ssim_func(y_true, y_pred, data_range=data_range)
+    else:
+        ssim_val = -1.0
+        
+    grad_corr = compute_gradient_correlation(y_pred, y_true, domain_mask)
+    
+    # --- Plot ---
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    
+    # Panel 1: Input (Conditioning)
+    ax0 = axes[0]
+    if input_vis is not None:
+        if input_vis.ndim > 2: input_vis = input_vis.squeeze()
+        # Resize input_vis to H, W if needed for display
+        if input_vis.shape != (H, W):
+            # Simple resize via zoom not ideal, assume it's roughly correct or interpolated before call
+            pass 
+        ax0.imshow(input_vis, cmap='viridis', origin='lower')
+        ax0.set_title("Input Condition")
+    else:
+        ax0.text(0.5, 0.5, "No Vis", ha='center')
+        ax0.set_title("Input")
+    
+    ax0.set_xlim(0, W); ax0.set_ylim(0, H); ax0.set_aspect('equal')
+    add_border(ax0)
+    
+    # Panel 2: GT
+    ax1 = axes[1]
+    im1 = ax1.imshow(y_true, origin='lower', cmap='viridis')
+    ax1.set_title("Ground Truth")
+    add_border(ax1)
+    plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+
+    # Panel 3: Pred
+    ax2 = axes[2]
+    im2 = ax2.imshow(y_pred, origin='lower', cmap='viridis')
+    ax2.set_title("Prediction")
+    add_border(ax2)
+    plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+
+    # Panel 4: Diff + Metrics
+    ax3 = axes[3]
+    # Center diff map around 0
+    max_val = max(abs(diff.min()), abs(diff.max())) if diff.size > 0 else 1.0
+    im3 = ax3.imshow(diff, cmap='RdBu', vmin=-max_val, vmax=max_val, origin='lower')
+    ax3.set_title("Diff (Pred - GT)")
+    
+    metrics_text = (f"MAE:{mae:.3f} | RMSE:{rmse:.3f} | MAPE:{mape:.1f}%\n"
+                    f"SSIM:{ssim_val:.3f} | GradCorr:{grad_corr:.3f}")
+    ax3.set_xlabel(metrics_text, fontsize=9, family='monospace',
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.85))
+    
+    add_border(ax3)
+    plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
 def load_model_from_config(config, ckpt):
     print(f"Loading model state from {ckpt}...")
     pl_sd = torch.load(ckpt, map_location="cpu")
@@ -242,15 +343,20 @@ def main():
                     "inference_time": inference_time
                 })
                 
-                # Optional: Save Image (Every 10th sample specific to model?)
-                # To save time, maybe skip saving images in fast mode or only save first 1
+                # Optional: Save Image (First sample only)
                 if i == 0:
-                    # Save just one example to prove it worked
-                    plt.figure()
-                    plt.imshow(pred_np, cmap='viridis')
-                    plt.title(f"Pred (SSIM: {ssim_val:.2f})")
-                    plt.savefig(os.path.join(outdir, f"sample_{idx}.png"))
-                    plt.close()
+                    # Prepare Visualization inputs
+                    # Condition: If we can assume Channel 0 is mask, or visualize something meaningful
+                    if cond.shape[1] > 0:
+                         bg_low = cond.cpu().numpy()[0, 0]
+                         import cv2
+                         H_disp, W_disp = pred_np.shape[0], pred_np.shape[1]
+                         bg_vis = cv2.resize(bg_low, (W_disp, H_disp), interpolation=cv2.INTER_NEAREST)
+                    else:
+                         bg_vis = None
+                         
+                    save_path = os.path.join(outdir, f"sample_{idx}.png")
+                    save_standardized_plot(gt_np, pred_np, save_path, input_vis=bg_vis)
 
             # Save Summary
             df = pd.DataFrame(model_metrics)
