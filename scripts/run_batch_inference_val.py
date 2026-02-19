@@ -57,9 +57,12 @@ def get_best_checkpoint(folder):
     if not os.path.exists(ckpt_dir):
         return None
         
-    # 1. last.ckpt (Often most relevant for resuming, but for inference maybe 'best'?)
-    # User said "latest best checkpoints".
-    # Usually 'last.ckpt' is the very latest state.
+    # 1. best.ckpt (Usually validation loss best)
+    best = os.path.join(ckpt_dir, "best.ckpt")
+    if os.path.exists(best):
+        return best
+        
+    # 2. last.ckpt (Latest state)
     last = os.path.join(ckpt_dir, "last.ckpt")
     if os.path.exists(last):
         return last
