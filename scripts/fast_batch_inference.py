@@ -38,9 +38,10 @@ def get_experiment_groups(logs_dir, filter_str=None):
         # Filter Logic
         if "autoencoder" in folder.lower():
             continue
-        if filter_str and filter_str not in folder:
-            continue
-
+        if filter_str:
+            filters = [f.strip() for f in filter_str.split(',')]
+            if not any(f in folder for f in filters):
+                continue
         try:
             parts = folder.split('_')
             if len(parts) < 2: continue
@@ -90,12 +91,21 @@ def get_best_checkpoint(folder):
     return ckpts[0]
 
 def get_config_path(folder):
-    cfg = os.path.join(folder, "configs", "project.yaml")
-    if os.path.exists(cfg): return cfg
     cfg_dir = os.path.join(folder, "configs")
-    if os.path.exists(cfg_dir):
-        yamls = glob.glob(os.path.join(cfg_dir, "*.yaml"))
-        if yamls: return yamls[0]
+    if not os.path.exists(cfg_dir): return None
+    
+    cfg = os.path.join(cfg_dir, "project.yaml")
+    if os.path.exists(cfg): return cfg
+    
+    # Check for anything ending in project.yaml (like 2026-02-18-project.yaml)
+    yamls = glob.glob(os.path.join(cfg_dir, "*-project.yaml"))
+    if yamls: return yamls[0]
+    
+    # Fallback to any yaml that isn't lightning
+    yamls = glob.glob(os.path.join(cfg_dir, "*.yaml"))
+    yamls = [y for y in yamls if "lightning" not in y]
+    if yamls: return yamls[0]
+    
     return None
 
 def compute_gradient_correlation(pred, true, dmask=None):
@@ -225,9 +235,33 @@ def save_standardized_plot(y_true, y_pred, save_path, input_vis=None):
 def load_model_from_config(config, ckpt):
     print(f"Loading model state from {ckpt}...")
     pl_sd = torch.load(ckpt, map_location="cpu")
-    sd = pl_sd["state_dict"]
+    sd = pl_sd["state_dict"] if "state_dict" in pl_sd else pl_sd
+    
     model = instantiate_from_config(config.model)
-    model.load_state_dict(sd, strict=False)
+    model_keys = set(model.state_dict().keys())
+    
+    # Smart filtering: Only map prefixes if the target key actually exists in the model
+    # but is missing from the checkpoint's raw keys.
+    sd_new = {}
+    for k in model_keys:
+        if k in sd:
+            sd_new[k] = sd[k]
+        elif f"model_ema.{k}" in sd:
+            sd_new[k] = sd[f"model_ema.{k}"]
+        elif f"model.{k}" in sd:
+            sd_new[k] = sd[f"model.{k}"]
+            
+    # Include any other keys that were in the checkpoint just in case
+    for k, v in sd.items():
+        if k not in sd_new and not k.startswith("model_ema.") and not k.startswith("model."):
+             sd_new[k] = v
+    
+    missing, unexpected = model.load_state_dict(sd_new, strict=False)
+    if len(missing) > 0:
+        print(f"  [Warning] Missing {len(missing)} keys in checkpoint")
+    if len(unexpected) > 0:
+        print(f"  [Warning] Unexpected {len(unexpected)} keys in checkpoint")
+        
     model.cuda()
     model.eval()
     return model
