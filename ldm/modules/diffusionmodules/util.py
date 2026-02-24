@@ -211,6 +211,17 @@ class SiLU(nn.Module):
         return x * torch.sigmoid(x)
 
 
+class Wavelet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.w1 = nn.Parameter(torch.ones(1))
+        self.w2 = nn.Parameter(torch.ones(1))
+
+    def forward(self, x):
+        return self.w1 * torch.sin(x) + self.w2 * torch.cos(x)
+
+
+
 class GroupNorm32(nn.GroupNorm):
     def forward(self, x):
         return super().forward(x.float()).type(x.dtype)
