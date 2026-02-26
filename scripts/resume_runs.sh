@@ -43,7 +43,8 @@ get_latest_ckpt() {
 
 submit_job() {
     NAME=$1
-    ARGS=$2
+    SLURM_SCRIPT=$2
+    ARGS=$3
     
     FINAL_ARGS="$ARGS"
     
@@ -57,34 +58,14 @@ submit_job() {
         fi
     fi
     
-    # Submit train_ldm.slurm which is now in scripts/ relative to root
-    sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
+    # Submit the specific slurm script
+    sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" "$SLURM_SCRIPT"
 }
 
-# --- Experiment 1: Low GradCorr ---
-submit_job "low_grad_corr" "-n low_grad_corr \
- model.params.grad_corr_weight=0.1 \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=16 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# --- Experiment 2: Med GradCorr ---
-submit_job "med_grad_corr" "-n med_grad_corr \
- model.params.grad_corr_weight=0.5 \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=16 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-submit_job "medlr_lowb_highweight" "-n medlr_lowb_highweight \
+# --- Experiment: Wavelet ---
+submit_job "cfd_ldm_wavelet" "scripts/train_ldm_wavelet.slurm" "-n cfd_ldm_wavelet \
  model.base_learning_rate=2.0e-6 \
  data.params.batch_size=6 \
- model.params.original_elbo_weight=1.0e-1 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50"
