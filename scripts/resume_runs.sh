@@ -18,25 +18,22 @@ get_latest_ckpt() {
     # Check logs directory in current (root) path
     LOGS_DIR="logs"
     
-    # Find latest log dir for this experiment
-    LATEST_LOGDIR=$(ls -td "${LOGS_DIR}"/*${EXP_NAME}* 2>/dev/null | head -n 1)
-    if [ -z "$LATEST_LOGDIR" ]; then
-        return 1
-    fi
-    
-    # Check for last.ckpt first, then any ckpt
-    CKPT="${LATEST_LOGDIR}/checkpoints/last.ckpt"
-    if [ -f "$CKPT" ]; then
-        echo "$CKPT"
-        return 0
-    fi
-    
-    # Fallback to any ckpt
-    CKPT=$(ls -t ${LATEST_LOGDIR}/checkpoints/*.ckpt 2>/dev/null | head -n 1)
-    if [ ! -z "$CKPT" ]; then
-        echo "$CKPT"
-        return 0
-    fi
+    # Iterate through all log dirs for this experiment, newest first
+    for LATEST_LOGDIR in $(ls -td "${LOGS_DIR}"/*${EXP_NAME}* 2>/dev/null); do
+        # Check for last.ckpt first, then any ckpt
+        CKPT="${LATEST_LOGDIR}/checkpoints/last.ckpt"
+        if [ -f "$CKPT" ]; then
+            echo "$CKPT"
+            return 0
+        fi
+        
+        # Fallback to any ckpt
+        CKPT=$(ls -t ${LATEST_LOGDIR}/checkpoints/*.ckpt 2>/dev/null | head -n 1)
+        if [ ! -z "$CKPT" ]; then
+            echo "$CKPT"
+            return 0
+        fi
+    done
     
     return 1
 }
