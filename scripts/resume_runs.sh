@@ -61,8 +61,8 @@ submit_job() {
 
 # --- Experiment: Wavelet ---
 submit_job "cfd_ldm_wavelet" "scripts/train_ldm_wavelet.slurm" "-n cfd_ldm_wavelet \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=6 \
+ model.base_learning_rate=5.0e-6 \
+ data.params.batch_size=16 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50"
