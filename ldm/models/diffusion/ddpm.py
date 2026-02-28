@@ -22,6 +22,7 @@ from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat,
 from ldm.modules.ema import LitEma
 from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianDistribution
 from ldm.modules.losses.grad_corr import GradCorrLoss
+from ldm.modules.losses.PINNSloss import PINNSLoss
 from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, AutoencoderKL
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
@@ -436,6 +437,7 @@ class LatentDiffusion(DDPM):
                  scale_factor=1.0,
                  scale_by_std=False,
                  grad_corr_weight=0.0,
+                 use_pinn_loss=False,
                  *args, **kwargs):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
@@ -453,6 +455,11 @@ class LatentDiffusion(DDPM):
         if self.grad_corr_weight > 0:
             print(f"LatentDiffusion: Enabled GradCorrLoss with weight {self.grad_corr_weight}")
             self.grad_corr_loss = GradCorrLoss()
+
+        self.use_pinn_loss = use_pinn_loss
+        if self.use_pinn_loss:
+            print(f"LatentDiffusion: Enabled PINNSLoss physics-informed training!")
+            self.pinn_loss_fn = PINNSLoss()
             
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
@@ -884,7 +891,11 @@ class LatentDiffusion(DDPM):
             if self.shorten_cond_schedule:  # TODO: drop this option
                 tc = self.cond_ids[t].to(self.device)
                 c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
-        return self.p_losses(x, c, t, *args, **kwargs)
+        
+        if getattr(self, "use_pinn_loss", False):
+            return self.pinn_losses(x, c, t, *args, **kwargs)
+        else:
+            return self.p_losses(x, c, t, *args, **kwargs)
 
     def _rescale_annotations(self, bboxes, crop_coordinates):  # TODO: move to dataset
         def rescale_bbox(bbox):
@@ -1070,6 +1081,75 @@ class LatentDiffusion(DDPM):
                 loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
                 
                 loss = loss + self.grad_corr_weight * gc_loss
+
+        loss_dict.update({f'{prefix}/loss': loss})
+
+        return loss, loss_dict
+
+    def pinn_losses(self, x_start, cond, t, noise=None):
+        noise = default(noise, lambda: torch.randn_like(x_start))
+        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
+        model_output = self.apply_model(x_noisy, t, cond)
+
+        loss_dict = {}
+        prefix = 'train' if self.training else 'val'
+
+        if self.parameterization == "x0":
+            target = x_start
+        elif self.parameterization == "eps":
+            target = noise
+        else:
+            raise NotImplementedError()
+
+        loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
+        loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
+
+        logvar_t = self.logvar.to(t.device)[t]
+        loss = loss_simple / torch.exp(logvar_t) + logvar_t
+        if self.learn_logvar:
+            loss_dict.update({f'{prefix}/loss_gamma': loss.mean()})
+            loss_dict.update({'logvar': self.logvar.data.mean()})
+
+        loss = self.l_simple_weight * loss.mean()
+
+        loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
+        loss_vlb = (self.lvlb_weights.to(t.device)[t] * loss_vlb).mean()
+        loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
+        loss += (self.original_elbo_weight * loss_vlb)
+        
+        # --- PINNs Loss Integration ---
+        if self.parameterization == "eps":
+            x_recon = self.predict_start_from_noise(x_noisy, t=t, noise=model_output)
+        elif self.parameterization == "x0":
+            x_recon = model_output
+        else:
+            x_recon = None
+        
+        if x_recon is not None:
+            # Decode to Pixel Space
+            x_recon_pixel = self.decode_first_stage(x_recon)
+            x_start_pixel = self.decode_first_stage(x_start)
+            
+            # Extract Condition
+            if isinstance(cond, dict) and 'c_concat' in cond:
+                cond_tensor = cond['c_concat'][0]
+            elif isinstance(cond, dict) and 'c_crossattn' in cond:
+                cond_tensor = cond['c_crossattn'][0]
+            else:
+                cond_tensor = cond
+                
+            pinn_total, pinn_dict = self.pinn_loss_fn(x_recon_pixel, x_start_pixel, cond_tensor)
+            
+            for k, v in pinn_dict.items():
+                loss_dict.update({f'{prefix}/{k}': v})
+            
+            loss = loss + pinn_total
+
+        # Retain GradCorr if enabled
+        if self.grad_corr_weight > 0 and x_recon is not None:
+            gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel)
+            loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
+            loss = loss + self.grad_corr_weight * gc_loss
 
         loss_dict.update({f'{prefix}/loss': loss})
 
