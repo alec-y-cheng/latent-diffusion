@@ -60,9 +60,38 @@ submit_job() {
 }
 
 # --- Experiment: Wavelet ---
-submit_job "cfd_ldm_wavelet" "scripts/train_ldm_wavelet.slurm" "-n cfd_ldm_wavelet \
+submit_job "cfd_ldm_pinnsformer" "scripts/train_ldm_pinnsformer.slurm" "-n cfd_ldm_pinnsformer \
  model.base_learning_rate=5.0e-6 \
  data.params.batch_size=16 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50"
+
+ submit_job "low_grad_corr" "scripts/train_ldm.slurm" "-n low_grad_corr \
+ model.params.grad_corr_weight=0.1 \
+ model.base_learning_rate=2.0e-6 \
+ data.params.batch_size=16 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50"
+
+# --- Experiment 2: Med GradCorr ---
+submit_job "med_grad_corr" "scripts/train_ldm.slurm" "-n med_grad_corr \
+ model.params.grad_corr_weight=0.5 \
+ model.base_learning_rate=2.0e-6 \
+ data.params.batch_size=16 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50"
+
+# --- Experiment 3: High GradCorr ---
+submit_job "high_grad_corr" "scripts/train_ldm.slurm" "-n high_grad_corr \
+ model.params.grad_corr_weight=1 \
+ model.base_learning_rate=2.0e-6 \
+ data.params.batch_size=16 \
+ model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50"
