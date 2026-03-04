@@ -27,6 +27,6 @@ python scripts/fast_batch_inference.py \
     --logs logs \
     --num_samples 50 \
     --steps 50 \
-    --filter cfd_ldm_wavelet
+    --filter cfd_ldm_pinnsformer,low_grad_corr,med_grad_corr,high_grad_corr
 
 echo "Batch Inference finished."
