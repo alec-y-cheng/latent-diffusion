@@ -305,36 +305,44 @@ def main():
 
     for exp_name, runs in groups.items():
         runs.sort(key=lambda x: x['timestamp'], reverse=True)
-        # Try to find a valid checkpoint in the latest run first
-        # But if the latest run failed (no checkpoints), we should check the next latest one!
-        valid_run = None
+        
+        valid_model_loaded = False
+        latest_run = None
         ckpt = None
+        run_config = None
+        model = None
         
         for run in runs:
             c = get_best_checkpoint(run['path'])
-            if c:
-                valid_run = run
+            if not c: continue
+                
+            # Try to load the config
+            run_config_path = get_config_path(run['path'])
+            temp_config = OmegaConf.load(run_config_path) if run_config_path else base_config
+            
+            print(f"  Attempting to load checkpoint from run: {run['folder']}")
+            try:
+                # Need to clear CUDA memory before loading new model just in case
+                torch.cuda.empty_cache()
+                model_candidate = load_model_from_config(temp_config, c)
+                
+                # If we get here without an exception, it's NOT corrupted!
+                model = model_candidate
+                valid_model_loaded = True
+                latest_run = run
                 ckpt = c
-                break
+                run_config = temp_config
+                break 
+                
+            except Exception as e:
+                print(f"  [Warning] Run {run['folder']} checkpoint is corrupted, skipping to older run... ({e})")
+                continue
         
-        if not valid_run:
-            print(f"  [Skipping] No checkpoints found in any runs for {exp_name}")
+        if not valid_model_loaded:
+            print(f"  [Skipping] No valid uncorrupted checkpoints found in any runs for {exp_name}")
             continue
             
-        latest_run = valid_run # Use the valid one
-        print(f"  Using checkpoint from run: {latest_run['folder']}")
-            
-        # Load Model Config (Model architecture might vary, so we load config per model)
-        run_config_path = get_config_path(latest_run['path'])
-        if not run_config_path:
-            print("  No config found. Using default architecture.")
-            run_config = base_config
-        else:
-            run_config = OmegaConf.load(run_config_path)
-
         try:
-            # Re-instantiate model to clear previous state/memory
-            model = load_model_from_config(run_config, ckpt)
             sampler = DDIMSampler(model)
             
             # Run Inference Loop
