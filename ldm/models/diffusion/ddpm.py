@@ -438,7 +438,12 @@ class LatentDiffusion(DDPM):
                  scale_by_std=False,
                  grad_corr_weight=0.0,
                  use_pinn_loss=False,
+                 pinn_loss_weight=1.0,
+                 lambda_res=1.0,
+                 lambda_bc=1.0,
+                 l_simple_weight=1.0,
                  *args, **kwargs):
+        kwargs['l_simple_weight'] = l_simple_weight
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
         assert self.num_timesteps_cond <= kwargs['timesteps']
@@ -457,9 +462,15 @@ class LatentDiffusion(DDPM):
             self.grad_corr_loss = GradCorrLoss()
 
         self.use_pinn_loss = use_pinn_loss
+        self.pinn_loss_weight = pinn_loss_weight
+        
+        # Expose internal physics weights for easy omega-conf overriding
+        self.lambda_res = lambda_res
+        self.lambda_bc = lambda_bc
+        
         if self.use_pinn_loss:
-            print(f"LatentDiffusion: Enabled PINNSLoss physics-informed training!")
-            self.pinn_loss_fn = PINNSLoss()
+            print(f"LatentDiffusion: Enabled PINNSLoss physics training (Weight: {self.pinn_loss_weight}, Res: {self.lambda_res}, BC: {self.lambda_bc})")
+            self.pinn_loss_fn = PINNSLoss(lambda_res=self.lambda_res, lambda_bc=self.lambda_bc)
             
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
@@ -1143,7 +1154,7 @@ class LatentDiffusion(DDPM):
             for k, v in pinn_dict.items():
                 loss_dict.update({f'{prefix}/{k}': v})
             
-            loss = loss + pinn_total
+            loss = loss + (self.pinn_loss_weight * pinn_total)
 
         # Retain GradCorr if enabled
         if self.grad_corr_weight > 0 and x_recon is not None:

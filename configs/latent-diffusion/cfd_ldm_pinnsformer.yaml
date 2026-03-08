@@ -16,6 +16,7 @@ model:
     monitor: val/loss
     grad_corr_weight: 1.0e-4
     use_pinn_loss: true
+    pinn_loss_weight: 1.0
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:

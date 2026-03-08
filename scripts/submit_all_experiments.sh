@@ -44,8 +44,9 @@ get_latest_ckpt() {
 submit_job() {
     NAME=$1
     ARGS=$2
+    CONFIG=${3:-"configs/latent-diffusion/cfd_ldm.yaml"}
     
-    FINAL_ARGS="$ARGS"
+    FINAL_ARGS="-b $CONFIG $ARGS"
     
     if [ "$RESUME_MODE" = true ]; then
         CKPT=$(get_latest_ckpt "$NAME")
@@ -62,92 +63,59 @@ submit_job() {
 }
 
 # Experiment 1
-submit_job "medlr_highb_medaux" "-n medlr_highb_medaux \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=16 \
+submit_job "32b_5e6lr" "-n 32b_5e6lr \
+ model.base_learning_rate=5.0e-6 \
+ data.params.batch_size=32 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50"
 
 # Experiment 2
-submit_job "highlr_highb_medaux" "-n highlr_highb_medaux \
+submit_job "32b_1e5lr" "-n 32b_1e5lr \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=32 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50"
+
+ # Experiment 3
+submit_job "32b_5e5lr" "-n 32b_5e5lr \
+ model.base_learning_rate=5.0e-5 \
+ data.params.batch_size=32 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50"
+
+ # Experiment 4
+submit_job "64b_5e6lr" "-n 64b_5e6lr \
  model.base_learning_rate=5.0e-6 \
- data.params.batch_size=16 \
+ data.params.batch_size=64 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50"
 
-# Experiment 3
-submit_job "lowlr_highb_medaux" "-n lowlr_highb_medaux \
- model.base_learning_rate=1.0e-6 \
- data.params.batch_size=16 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# Experiment 4
-submit_job "medlr_lowb_medaux" "-n medlr_lowb_medaux \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=6 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# Experiment 5
-submit_job "highlr_lowb_medaux" "-n highlr_lowb_medaux \
+ # Experiment 5
+submit_job "16b_5e6lr_pinnsbcloss" "-n pinnsbcloss \
  model.base_learning_rate=5.0e-6 \
- data.params.batch_size=6 \
+ data.params.batch_size=32 \
+ model.params.lambda_res=0.1 \
+ model.params.lambda_bc=10.0 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"
 
-# Experiment 6
-submit_job "lowlr_lowb_medaux" "-n lowlr_lowb_medaux \
- model.base_learning_rate=1.0e-6 \
- data.params.batch_size=6 \
- model.params.original_elbo_weight=1.0e-3 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# Experiment 7 (Note: Reused name 'medlr_lowb_medaux' in prompt, assuming user meant different weight or suffix. 
-# Prompt had weight 1.0e-1. Renamed to medlr_lowb_highweight to avoid collision with Exp 4)
-submit_job "medlr_lowb_highweight" "-n medlr_lowb_highweight \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=6 \
- model.params.original_elbo_weight=1.0e-1 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# Experiment 8
-submit_job "medlr_lowb_highaux" "-n medlr_lowb_highaux \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=6 \
- model.params.original_elbo_weight=1.0 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# Experiment 9
-submit_job "medlr_lowb_lowaux" "-n medlr_lowb_lowaux \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=6 \
+  # Experiment 6
+submit_job "16b_5e6lr_pinnsresloss" "-n pinnsresloss \
+ model.base_learning_rate=5.0e-6 \
+ data.params.batch_size=32 \
+ model.params.lambda_res=10.0 \
+ model.params.lambda_bc=0.1 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# Experiment 10
-submit_job "medlr_lowb_noaux" "-n medlr_lowb_noaux \
- model.base_learning_rate=2.0e-6 \
- data.params.batch_size=6 \
- model.params.original_elbo_weight=0 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"
