@@ -61,60 +61,12 @@ submit_job() {
     # Submit train_ldm.slurm which is now in scripts/ relative to root
     sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
 }
-
-# Experiment 1
-submit_job "32b_5e6lr" "-n 32b_5e6lr \
- model.base_learning_rate=5.0e-6 \
- data.params.batch_size=32 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
-# Experiment 2
-submit_job "32b_1e5lr" "-n 32b_1e5lr \
- model.base_learning_rate=1.0e-5 \
- data.params.batch_size=32 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
- # Experiment 3
-submit_job "32b_5e5lr" "-n 32b_5e5lr \
- model.base_learning_rate=5.0e-5 \
- data.params.batch_size=32 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
- # Experiment 4
-submit_job "64b_5e6lr" "-n 64b_5e6lr \
- model.base_learning_rate=5.0e-6 \
- data.params.batch_size=64 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
-
- # Experiment 5
-submit_job "16b_5e6lr_pinnsbcloss" "-n pinnsbcloss \
- model.base_learning_rate=5.0e-6 \
- data.params.batch_size=32 \
- model.params.lambda_res=0.1 \
- model.params.lambda_bc=10.0 \
- model.params.original_elbo_weight=1.0e-4 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
- lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"
-
   # Experiment 6
-submit_job "16b_5e6lr_pinnsresloss" "-n pinnsresloss \
- model.base_learning_rate=5.0e-6 \
+submit_job "default_pinns" "-n default_pinns \
+ model.base_learning_rate=3.0e-6 \
  data.params.batch_size=32 \
- model.params.lambda_res=10.0 \
- model.params.lambda_bc=0.1 \
+ model.params.lambda_res=1 \
+ model.params.lambda_bc=1 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
