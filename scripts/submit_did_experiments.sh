@@ -69,7 +69,7 @@ submit_job "did_base" "-n did_base \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50"
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_did.yaml"
 
 # Experiment 2
 submit_job "did_wavelet" "-n did_wavelet \
@@ -78,4 +78,4 @@ submit_job "did_wavelet" "-n did_wavelet \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_wavelet.yaml"
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_wavelet_did.yaml"
