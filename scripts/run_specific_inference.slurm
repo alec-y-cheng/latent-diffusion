@@ -27,6 +27,6 @@ python scripts/fast_batch_inference.py \
     --logs logs \
     --num_samples 50 \
     --steps 50 \
-    --filter 32b_5e6lr,32b_1e5lr,32b_5e5lr,64b_5e6lr,pinnsbcloss,pinnsresloss
+    --filter did_base,did_wavelet,default_pinns
 
 echo "Batch Inference finished."

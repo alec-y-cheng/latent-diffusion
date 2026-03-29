@@ -68,11 +68,11 @@ data:
     train:
       target: ldm.data.cfd_data.CFDConditionalTrain
       params:
-        data_path: data/augmented_did
+        data_path: data/augmented_did_h5
     validation:
       target: ldm.data.cfd_data.CFDConditionalValidation
       params:
-        data_path: data/augmented_did
+        data_path: data/augmented_did_h5
 
 lightning:
   callbacks:

@@ -279,22 +279,17 @@ def main():
     parser.add_argument("--filter", type=str, default=None, help="Filter experiments by name (partial match)")
     args = parser.parse_args()
 
-    # 1. Load Dataset ONCE
-    print("Initializing Dataset (This happens only ONCE)...")
+    # We will determine length and grab indices from the default config just once
+    # to ensure all models are compared on the exact same validation images.
     base_config = OmegaConf.load(args.default_config)
     dataset_conf = base_config.data.params.validation
+    if args.data_path: dataset_conf.params.data_path = args.data_path
     
-    if args.data_path:
-        print(f"Overriding dataset path with: {args.data_path}")
-        dataset_conf.params.data_path = args.data_path
-    
+    # Quick instantiation just to get the length
     dataset = instantiate_from_config(dataset_conf)
-    print(f"Dataset loaded. Length: {len(dataset)}")
-    
-    # Select indices shared across all models for fair comparison
     total_len = len(dataset)
     indices = np.random.choice(total_len, args.num_samples, replace=False)
-    print(f"Selected indices for all models: {indices}")
+    print(f"Selected unified indices for all models: {indices}")
 
     # Pre-load data items into CPU memory (if feasible) or just indices
     # To be safe and fast, let's keep it as indices access.
@@ -343,6 +338,12 @@ def main():
             continue
             
         try:
+            # Dynamically instantiate the exact dataset required by this model's config
+            # (e.g. 15-channel DID vs 8-channel original) to prevent shape mismatches
+            dataset_conf = run_config.data.params.validation
+            if args.data_path: dataset_conf.params.data_path = args.data_path
+            dataset = instantiate_from_config(dataset_conf)
+            
             sampler = DDIMSampler(model)
             
             # Run Inference Loop

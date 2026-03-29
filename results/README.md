@@ -21,6 +21,13 @@ Hyperparameter Testing on These
 | 5.0e-5        | 32         | Failed to converge |
 | 5.0e-6        | 64         | Failed to converge |
 
+DID results
+
+| Learning Rate | Batch Size | VLB Weight | GradCorr | MAE   |  RMSE | SSIM | GradCorr | Inference Time |Epochs | Additional Tests |
+|---------------|------------|------------|----------|-------|-------|------|----------|----------------|-------|------------------|
+| 5.0e-6        | 32         | 1.0e-4     | 0        | 0.0357| 0.0652| 0.920| 0.420    | 0.632          | 202   |                  |
+
+
 
 
 
