@@ -25,7 +25,16 @@ DID results
 
 | Learning Rate | Batch Size | VLB Weight | GradCorr | MAE   |  RMSE | SSIM | GradCorr | Inference Time |Epochs | Additional Tests |
 |---------------|------------|------------|----------|-------|-------|------|----------|----------------|-------|------------------|
-| 5.0e-6        | 32         | 1.0e-4     | 0        | 0.0357| 0.0652| 0.920| 0.420    | 0.632          | 202   |                  |
+| 5.0e-6        | 32         | 1.0e-4     | 0        | 0.0327| 0.0586| 0.930| 0.508    | 0.610          | 384   |                  |
+| 5.0e-6        | 32         | 1.0e-4     | 0.0001   | 0.0468| 0.0832| 0.898| 0.276    | NA             | 97    | Wavelet          |
+| 3.0e-6        | 32         | 1.0e-4     | 0.0001   | 0.0468| 0.0832| 0.898| 0.276    | 0.786          | 190   | Physics Loss     |
+
+
+
+other tests:
+figure out grad correlation (90 and 91 for low and med)
+figure out inference step
+smaller autoencoder (running)
 
 
 

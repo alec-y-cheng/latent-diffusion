@@ -556,15 +556,15 @@ if __name__ == "__main__":
                     "id": nowname,
                 }
             },
-            "testtube": {
-                "target": "pytorch_lightning.loggers.TestTubeLogger",
+            "tensorboard": {
+                "target": "pytorch_lightning.loggers.TensorBoardLogger",
                 "params": {
-                    "name": "testtube",
+                    "name": "tensorboard",
                     "save_dir": logdir,
                 }
             },
         }
-        default_logger_cfg = default_logger_cfgs["testtube"]
+        default_logger_cfg = default_logger_cfgs["tensorboard"]
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
         else:
@@ -740,10 +740,11 @@ if __name__ == "__main__":
         raise
     finally:
         # move newly created debug project to debug_runs
-        if opt.debug and not opt.resume and trainer.global_rank == 0:
-            dst, name = os.path.split(logdir)
-            dst = os.path.join(dst, "debug_runs", name)
-            os.makedirs(os.path.split(dst)[0], exist_ok=True)
-            os.rename(logdir, dst)
-        if trainer.global_rank == 0:
-            print(trainer.profiler.summary())
+        if 'trainer' in locals() and trainer is not None:
+            if opt.debug and not opt.resume and trainer.global_rank == 0:
+                dst, name = os.path.split(logdir)
+                dst = os.path.join(dst, "debug_runs", name)
+                os.makedirs(os.path.split(dst)[0], exist_ok=True)
+                os.rename(logdir, dst)
+            if trainer.global_rank == 0:
+                print(trainer.profiler.summary())
