@@ -4,7 +4,7 @@ import numpy as np
 import os
 
 class CFDDataset(Dataset):
-    def __init__(self, data_path, split="train", split_ratio=0.9):
+    def __init__(self, data_path, split="train", split_ratio=0.9, size=None):
         """
         Custom Dataset for CFD Velocity Magnitude Fields.
         Expects an .npz file with a 'Y' key containing shape (N, 1, H, W).
@@ -12,6 +12,7 @@ class CFDDataset(Dataset):
         self.data_path = data_path
         self.split = split
         self.split_ratio = split_ratio
+        self.size = size
         
         try:
             # Determine split index
@@ -61,16 +62,19 @@ class CFDDataset(Dataset):
         # Ensure float32
         x = torch.from_numpy(x).float()
         
+        if self.size is not None:
+            x = torch.nn.functional.interpolate(x.unsqueeze(0), size=(self.size, self.size), mode='bilinear', align_corners=False).squeeze(0)
+            
         # Key 'image' is standard for the LDM codebase
         return {"image": x}
 
 class CFDTrain(CFDDataset):
-    def __init__(self, data_path, **kwargs):
-        super().__init__(data_path=data_path, split="train", **kwargs)
+    def __init__(self, data_path, size=None, **kwargs):
+        super().__init__(data_path=data_path, split="train", size=size, **kwargs)
 
 class CFDValidation(CFDDataset):
-    def __init__(self, data_path, **kwargs):
-        super().__init__(data_path=data_path, split="validation", **kwargs)
+    def __init__(self, data_path, size=None, **kwargs):
+        super().__init__(data_path=data_path, split="validation", size=size, **kwargs)
 
 class CFDConditionalDataset(Dataset):
     def __init__(self, data_path, split="train", split_ratio=0.9, augment=False):

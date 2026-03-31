@@ -61,13 +61,45 @@ submit_job() {
     # Submit train_ldm.slurm which is now in scripts/ relative to root
     sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
 }
-  # Experiment 6
-submit_job "default_pinns" "-n default_pinns \
- model.base_learning_rate=3.0e-6 \
+
+submit_job "grad_corr_low" "-n grad_corr_low \
+ model.params.grad_corr_weight=0.1 \
+ model.base_learning_rate=5.0e-6 \
  data.params.batch_size=32 \
- model.params.lambda_res=1 \
- model.params.lambda_bc=1 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm.yaml"
+
+submit_job "grad_corr_med" "-n grad_corr_med \
+ model.params.grad_corr_weight=0.5 \
+ model.base_learning_rate=5.0e-6 \
+ data.params.batch_size=32 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm.yaml"
+
+submit_job "grad_corr_high" "-n grad_corr_high \
+ model.params.grad_corr_weight=1 \
+ model.base_learning_rate=5.0e-6 \
+ data.params.batch_size=32 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm.yaml"
+
+ submit_job "best_job_small_ae" "-n best_job_small_ae \
+ model.params.grad_corr_weight=0 \
+ model.base_learning_rate=5.0e-6 \
+ data.params.batch_size=32 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50 \
+ model.params.first_stage_config.params.ckpt_path=logs/2026-03-29T23-02-56_autoencoder_kl_8x8x64/checkpoints/last.ckpt \
+ model.params.first_stage_config.params.embed_dim=64 \
+ model.params.first_stage_config.params.ddconfig.z_channels=64 \
+ model.params.channels=64 \
+ model.params.unet_config.params.in_channels=72 \
+ model.params.unet_config.params.out_channels=64" "configs/latent-diffusion/cfd_ldm.yaml"
