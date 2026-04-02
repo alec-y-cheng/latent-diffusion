@@ -21,10 +21,6 @@ def main():
     output_dir = 'data/augmented_did'
     os.makedirs(output_dir, exist_ok=True)
     
-    print("WARNING: Because of the 300GB Lustre disk quota, we cannot pre-allocate an uncompressed 130GB mmap array.")
-    print("Instead, we will stream the dataset as individual compressed NPZ chunk files.")
-    
-    # Remove old bad mmap files if they exist to free up the quota space immediately
     if os.path.exists(os.path.join(output_dir, 'X_mmap.npy')):
         os.remove(os.path.join(output_dir, 'X_mmap.npy'))
     if os.path.exists(os.path.join(output_dir, 'Y_mmap.npy')):
