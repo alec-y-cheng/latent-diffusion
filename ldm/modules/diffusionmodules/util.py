@@ -135,7 +135,8 @@ class CheckpointFunction(torch.autograd.Function):
             # Tensor storage in place, which is not allowed for detach()'d
             # Tensors.
             shallow_copies = [x.view_as(x) for x in ctx.input_tensors]
-            output_tensors = ctx.run_function(*shallow_copies)
+            with torch.cuda.amp.autocast():
+                output_tensors = ctx.run_function(*shallow_copies)
         input_grads = torch.autograd.grad(
             output_tensors,
             ctx.input_tensors + ctx.input_params,
