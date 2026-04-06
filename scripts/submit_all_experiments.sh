@@ -62,7 +62,7 @@ submit_job() {
     sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
 }
 
- submit_job "grad_corr_low" "-n grad_corr_low \
+ submit_job "grad_corr_low_real" "-n grad_corr_low \
  model.params.grad_corr_weight=0.1 \
  model.base_learning_rate=1.0e-5 \
  data.params.batch_size=64 \
@@ -71,7 +71,7 @@ submit_job() {
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm.yaml"
 
-submit_job "grad_corr_med" "-n grad_corr_med \
+submit_job "grad_corr_med_real" "-n grad_corr_med \
  model.params.grad_corr_weight=0.5 \
  model.base_learning_rate=1.0e-5 \
  data.params.batch_size=64 \
@@ -80,7 +80,7 @@ submit_job "grad_corr_med" "-n grad_corr_med \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm.yaml"
 
-submit_job "grad_corr_high" "-n grad_corr_high \
+submit_job "grad_corr_high_real" "-n grad_corr_high \
  model.params.grad_corr_weight=1 \
  model.base_learning_rate=1.0e-5 \
  data.params.batch_size=64 \
@@ -89,17 +89,53 @@ submit_job "grad_corr_high" "-n grad_corr_high \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm.yaml"
 
- submit_job "best_job_small_ae" "-n best_job_small_ae \
- model.params.grad_corr_weight=0 \
+# 1. PINNs Baseline (Testing the newly wired physics loss WITHOUT wavelet confounding it)
+submit_job "pinns_baseline" "-n pinns_baseline \
+ model.params.use_pinn_loss=True \
+ model.params.pinn_loss_weight=0.1 \
+ model.params.lambda_res=1.0 \
+ model.params.lambda_bc=1.0 \
+ model.params.unet_config.params.use_wavelet=False \
  model.base_learning_rate=1.0e-5 \
  data.params.batch_size=64 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
- lightning.trainer.log_every_n_steps=50 \
- model.params.first_stage_config.params.ckpt_path=logs/2026-03-29T23-02-56_autoencoder_kl_8x8x64/checkpoints/last.ckpt \
- model.params.first_stage_config.params.embed_dim=64 \
- model.params.first_stage_config.params.ddconfig.z_channels=64 \
- model.params.channels=64 \
- model.params.unet_config.params.in_channels=72 \
- model.params.unet_config.params.out_channels=64" "configs/latent-diffusion/cfd_ldm.yaml"
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"
+
+# 2. PINNs Boundary Condition Focus (Strictly respecting physics, no wavelet)
+submit_job "pinns_bc_heavy" "-n pinns_bc_heavy \
+ model.params.use_pinn_loss=True \
+ model.params.pinn_loss_weight=0.5 \
+ model.params.lambda_res=1.0 \
+ model.params.lambda_bc=5.0 \
+ model.params.unet_config.params.use_wavelet=False \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=64 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"
+
+# 3. Wavelet + Grad Corr Combo (Tests if frequency-domain processing synergizes with physical gradient tracking)
+submit_job "wavelet_grad_corr" "-n wavelet_grad_corr \
+ model.params.grad_corr_weight=0.5 \
+ model.params.use_pinn_loss=False \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=64 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_wavelet.yaml"
+
+# 4. Ultimate Physics Combo (PINNs + Grad Corr + Wavelet Dataset)
+submit_job "physics_hybrid_master" "-n physics_hybrid_master \
+ model.params.use_pinn_loss=True \
+ model.params.pinn_loss_weight=0.5 \
+ model.params.grad_corr_weight=0.5 \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=64 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"

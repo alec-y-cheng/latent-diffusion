@@ -1083,8 +1083,8 @@ class LatentDiffusion(DDPM):
             
             if x_recon is not None:
                 # 2. Decode to Pixel Space
-                x_recon_pixel = self.decode_first_stage(x_recon)
-                x_start_pixel = self.decode_first_stage(x_start)
+                x_recon_pixel = self.differentiable_decode_first_stage(x_recon)
+                x_start_pixel = self.decode_first_stage(x_start) # Does not require gradients
                 
                 # 3. Compute Loss
                 gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel)
@@ -1138,8 +1138,8 @@ class LatentDiffusion(DDPM):
         
         if x_recon is not None:
             # Decode to Pixel Space
-            x_recon_pixel = self.decode_first_stage(x_recon)
-            x_start_pixel = self.decode_first_stage(x_start)
+            x_recon_pixel = self.differentiable_decode_first_stage(x_recon)
+            x_start_pixel = self.decode_first_stage(x_start) # Does not require gradients
             
             # Extract Condition
             if isinstance(cond, dict) and 'c_concat' in cond:
