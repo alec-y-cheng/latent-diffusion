@@ -62,10 +62,10 @@ submit_job() {
     sbatch --export=ALL,EXTRA_ARGS="$FINAL_ARGS" scripts/train_ldm.slurm
 }
 
-submit_job "grad_corr_low" "-n grad_corr_low \
+ submit_job "grad_corr_low" "-n grad_corr_low \
  model.params.grad_corr_weight=0.1 \
- model.base_learning_rate=5.0e-6 \
- data.params.batch_size=32 \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=64 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -73,8 +73,8 @@ submit_job "grad_corr_low" "-n grad_corr_low \
 
 submit_job "grad_corr_med" "-n grad_corr_med \
  model.params.grad_corr_weight=0.5 \
- model.base_learning_rate=5.0e-6 \
- data.params.batch_size=32 \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=64 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -82,8 +82,8 @@ submit_job "grad_corr_med" "-n grad_corr_med \
 
 submit_job "grad_corr_high" "-n grad_corr_high \
  model.params.grad_corr_weight=1 \
- model.base_learning_rate=5.0e-6 \
- data.params.batch_size=32 \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=64 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -91,8 +91,8 @@ submit_job "grad_corr_high" "-n grad_corr_high \
 
  submit_job "best_job_small_ae" "-n best_job_small_ae \
  model.params.grad_corr_weight=0 \
- model.base_learning_rate=5.0e-6 \
- data.params.batch_size=32 \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=64 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
