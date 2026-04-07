@@ -65,7 +65,8 @@ submit_job() {
  submit_job "grad_corr_low_real" "-n grad_corr_low \
  model.params.grad_corr_weight=0.1 \
  model.base_learning_rate=1.0e-5 \
- data.params.batch_size=64 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -74,7 +75,8 @@ submit_job() {
 submit_job "grad_corr_med_real" "-n grad_corr_med \
  model.params.grad_corr_weight=0.5 \
  model.base_learning_rate=1.0e-5 \
- data.params.batch_size=64 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -83,7 +85,8 @@ submit_job "grad_corr_med_real" "-n grad_corr_med \
 submit_job "grad_corr_high_real" "-n grad_corr_high \
  model.params.grad_corr_weight=1 \
  model.base_learning_rate=1.0e-5 \
- data.params.batch_size=64 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -97,7 +100,24 @@ submit_job "pinns_baseline" "-n pinns_baseline \
  model.params.lambda_bc=1.0 \
  model.params.unet_config.params.use_wavelet=False \
  model.base_learning_rate=1.0e-5 \
- data.params.batch_size=64 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
+ model.params.original_elbo_weight=1.0e-4 \
+ lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.modelcheckpoint.params.save_top_k=1 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/cfd_ldm_pinnsformer.yaml"
+
+
+# 1. PINNs Baseline with wavelet (Testing the newly wired physics loss WITHOUT wavelet confounding it)
+submit_job "pinns_baseline" "-n pinns_baseline \
+ model.params.use_pinn_loss=True \
+ model.params.pinn_loss_weight=0.1 \
+ model.params.lambda_res=1.0 \
+ model.params.lambda_bc=1.0 \
+ model.params.unet_config.params.use_wavelet=True \
+ model.base_learning_rate=1.0e-5 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -111,7 +131,8 @@ submit_job "pinns_bc_heavy" "-n pinns_bc_heavy \
  model.params.lambda_bc=5.0 \
  model.params.unet_config.params.use_wavelet=False \
  model.base_learning_rate=1.0e-5 \
- data.params.batch_size=64 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -122,7 +143,8 @@ submit_job "wavelet_grad_corr" "-n wavelet_grad_corr \
  model.params.grad_corr_weight=0.5 \
  model.params.use_pinn_loss=False \
  model.base_learning_rate=1.0e-5 \
- data.params.batch_size=64 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
@@ -134,7 +156,8 @@ submit_job "physics_hybrid_master" "-n physics_hybrid_master \
  model.params.pinn_loss_weight=0.5 \
  model.params.grad_corr_weight=0.5 \
  model.base_learning_rate=1.0e-5 \
- data.params.batch_size=64 \
+ data.params.batch_size=8 \
+ lightning.trainer.accumulate_grad_batches=8 \
  model.params.original_elbo_weight=1.0e-4 \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \

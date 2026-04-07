@@ -56,13 +56,16 @@ def add_border(ax):
         spine.set_color('black')
         spine.set_linewidth(1)
 
-def plot_domain_panel(ax, x_input, ch_x, ch_y):
+def plot_domain_panel(ax, x_input, ch_x, ch_y, target_W=None, target_H=None):
     """
     Render a CFD domain diagram: radial mesh, building footprints,
     inlet/outlet boundary arcs with arrows, LDM Model boundary, and labels.
     """
     import matplotlib.patches as mpatches
-    H, W = x_input.shape[1], x_input.shape[2]
+    orig_H, orig_W = x_input.shape[1], x_input.shape[2]
+    H = target_H if target_H is not None else orig_H
+    W = target_W if target_W is not None else orig_W
+    
     cx, cy = W // 2, H // 2
     R = min(H, W) // 2 - 5
 
@@ -94,14 +97,18 @@ def plot_domain_panel(ax, x_input, ch_x, ch_y):
     # Building footprints (Assuming SDF is at channel 0, negative is inside)
     bldg_mask = x_input[0] <= 0
     if np.any(bldg_mask):
-        bldg_rgba = np.zeros((H, W, 4), dtype=np.float32)
+        bldg_rgba = np.zeros((orig_H, orig_W, 4), dtype=np.float32)
         bldg_rgba[bldg_mask] = [0.15, 0.15, 0.15, 1.0]
         ax.imshow(bldg_rgba, origin="lower", extent=[0, W, 0, H], zorder=2)
 
     # LDM Model bound circle
     if np.any(bldg_mask):
         ys, xs = np.where(bldg_mask)
-        max_dist = np.sqrt(((xs - cx)**2 + (ys - cy)**2).max())
+        scale_x = W / orig_W
+        scale_y = H / orig_H
+        xs_scaled = xs * scale_x
+        ys_scaled = ys * scale_y
+        max_dist = np.sqrt(((xs_scaled - cx)**2 + (ys_scaled - cy)**2).max())
         gan_r = np.clip(max_dist * 1.15, R * 0.35, R * 0.85)
     else:
         gan_r = R * 0.6
@@ -134,25 +141,25 @@ def plot_domain_panel(ax, x_input, ch_x, ch_y):
     # Labels
     inlet_rad = np.radians(inlet_center_deg + 45)
     ax.text(cx + (R + 22) * np.cos(inlet_rad), cy + (R + 22) * np.sin(inlet_rad),
-            "inlet", ha="center", va="center", fontsize=7, color="royalblue", fontweight="bold",
+            "inlet", ha="center", va="center", fontsize=15, color="royalblue", fontweight="bold",
             bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.8, edgecolor="none"), zorder=6)
             
     outlet_rad = np.radians(wind_dir_deg + 45)
     ax.text(cx + (R + 22) * np.cos(outlet_rad), cy + (R + 22) * np.sin(outlet_rad),
-            "outlet", ha="center", va="center", fontsize=7, color="red", fontweight="bold",
+            "outlet", ha="center", va="center", fontsize=15, color="red", fontweight="bold",
             bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.8, edgecolor="none"), zorder=6)
             
     gan_label_rad = np.radians(wind_dir_deg + 90)
     ax.text(cx + gan_r * 0.65 * np.cos(gan_label_rad),
             cy + gan_r * 0.65 * np.sin(gan_label_rad),
-            "LDM Model", ha="center", va="center", fontsize=6,
+            "LDM Model", ha="center", va="center", fontsize=9,
             color="goldenrod", fontstyle="italic", fontweight="bold",
             bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.8, edgecolor="none"), zorder=6)
 
-    ax.set_title("Input Domain")
+    ax.set_title("Domain Setup", pad=36, fontsize=15, fontweight="bold",
+                  bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
     ax.set_xticks([]); ax.set_yticks([])
-    for sp in ax.spines.values():
-        sp.set_visible(True); sp.set_color("black"); sp.set_linewidth(1)
+    for sp in ax.spines.values(): sp.set_visible(False)
 
 def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     if y_true.ndim > 2: y_true = y_true.squeeze()
@@ -167,10 +174,18 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     
     # --- Domain Masking (Circular) ---
     center_y, center_x = H // 2, W // 2
-    radius = min(H, W) // 2
+    radius = min(H, W) // 2 - 5
     Y_coords, X_coords = np.ogrid[:H, :W]
     dist = np.sqrt((X_coords - center_x)**2 + (Y_coords - center_y)**2)
     domain_mask = dist < radius
+    outside = ~domain_mask
+    
+    # Force non-negative physics for visualization
+    y_pred = np.maximum(y_pred, 0)
+    
+    y_true_vis = np.ma.masked_where(outside, y_true)
+    y_pred_vis = np.ma.masked_where(outside, y_pred)
+    diff_vis = np.ma.masked_where(outside, diff)
     
     # --- Metrics ---
     diff_masked = diff[domain_mask]
@@ -201,11 +216,12 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     ss_tot = np.sum((gt_masked - np.mean(gt_masked)) ** 2)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
     
-    # --- Plot ---
-    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    # --- Plotting ---
+    fig = plt.figure(figsize=(24, 6))
+    grid_size = (1, 4)
     
-    # Panel 1: Input (Conditioning)
-    ax0 = axes[0]
+    # 1. Domain Setup
+    ax0 = plt.subplot(grid_size[0], grid_size[1], 1)
     if input_cond is not None and input_cond.shape[0] >= 8:
         if input_cond.shape[0] == 15:
             ch_x = input_cond[13].mean()
@@ -213,53 +229,87 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
         else:
             ch_x = input_cond[6].mean()
             ch_y = input_cond[7].mean()
-            
-        plot_domain_panel(ax0, input_cond, ch_x, ch_y)
+        plot_domain_panel(ax0, input_cond, ch_x, ch_y, target_W=W, target_H=H)
     elif input_cond is not None and input_cond.shape[0] > 0:
         ax0.imshow(input_cond[0], cmap='gray', origin='lower')
         ax0.set_title("Input (Mask)")
     else:
         ax0.text(0.5, 0.5, "No Vis", ha='center')
         ax0.set_title("Input")
-    
-    ax0.set_xlim(0, W); ax0.set_ylim(0, H); ax0.set_aspect('equal')
-    add_border(ax0)
-    
-    # Add invisible colorbar for consistent panel sizing across all 4 boxes
-    sm = plt.cm.ScalarMappable(cmap='Greys', norm=plt.Normalize(0, 1))
-    cbar0 = plt.colorbar(sm, ax=ax0, fraction=0.046, pad=0.04)
-    cbar0.ax.set_visible(False)
-    
-    # Panel 2: GT
-    ax1 = axes[1]
-    im1 = ax1.imshow(y_true, origin='lower', cmap='viridis', vmin=vmin, vmax=vmax)
-    ax1.set_title("Ground Truth")
-    add_border(ax1)
-    plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
 
-    # Panel 3: Pred
-    ax2 = axes[2]
-    im2 = ax2.imshow(y_pred, origin='lower', cmap='viridis', vmin=vmin, vmax=vmax)
-    ax2.set_title("Prediction")
-    add_border(ax2)
-    plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+    # 2. Ground Truth
+    ax1 = plt.subplot(grid_size[0], grid_size[1], 2)
+    ax1.set_title("Ground Truth", pad=36, fontsize=15, fontweight="bold",
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
+    im1 = ax1.imshow(y_true_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
+    if input_cond is not None and input_cond.shape[0] > 0:
+        ax1.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+    ax1.set_xticks([]); ax1.set_yticks([])
+    for spine in ax1.spines.values(): spine.set_visible(False)
 
-    # Panel 4: Diff + Metrics
-    ax3 = axes[3]
-    im3 = ax3.imshow(diff, cmap='RdBu', vmin=-2, vmax=2, origin='lower')
-    ax3.set_title("Diff (Pred - GT)")
+    # 3. Prediction
+    ax2 = plt.subplot(grid_size[0], grid_size[1], 3)
+    ax2.set_title("Prediction", pad=36, fontsize=15, fontweight="bold",
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
+    im2 = ax2.imshow(y_pred_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
+    if input_cond is not None and input_cond.shape[0] > 0:
+        ax2.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+    ax2.set_xticks([]); ax2.set_yticks([])
+    for spine in ax2.spines.values(): spine.set_visible(False)
+
+    # 4. Difference
+    ax3 = plt.subplot(grid_size[0], grid_size[1], 4)
+    im3 = ax3.imshow(diff_vis, cmap='RdBu', vmin=-2.0, vmax=2.0, origin='lower', interpolation='nearest')
+    ax3.set_title("Diff (Pred - GT)", pad=36, fontsize=15, fontweight="bold",
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
+    ax3.set_xticks([]); ax3.set_yticks([])
+    for spine in ax3.spines.values(): spine.set_visible(False)
+
+    plt.tight_layout(pad=1.5)
+    fig.canvas.draw()
+
+    # Align titles horizontally
+    all_axes = [ax0, ax1, ax2, ax3]
+    fig_ys = []
+    for a in all_axes:
+        tx, ty = a.title.get_position()
+        fig_y = a.transAxes.transform((tx, ty))[1]
+        fig_ys.append(fig_y)
+    target_fig_y = max(fig_ys)
+    for a in all_axes:
+        tx, _ = a.title.get_position()
+        new_axes_y = a.transAxes.inverted().transform((0, target_fig_y))[1]
+        a.title.set_position((tx, new_axes_y))
+
+    fig.canvas.draw()
+
+    # Horizontal colorbars
+    bb1 = ax1.get_position()
+    bb2 = ax2.get_position()
+    bb3 = ax3.get_position()
+    cb_w = bb3.width
+    cb_y = min(bb1.y0, bb3.y0) - 0.12
+
+    shared_center = (bb1.x0 + bb2.x1) / 2
+    cax_shared = fig.add_axes([shared_center - cb_w / 2, cb_y, cb_w, 0.025])
+    fig.colorbar(im1, cax=cax_shared, orientation="horizontal")
+
+    diff_center = bb3.x0 + bb3.width / 2
+    cax_diff = fig.add_axes([diff_center - cb_w / 2, cb_y, cb_w, 0.025])
+    fig.colorbar(im3, cax=cax_diff, orientation="horizontal")
+
+    # Metrics text
+    ssim_str = f"{ssim_val:.3f}" if ssim_val >= 0 else "N/A"
+    metrics_line1 = f"MAE:{mae:.3f} | RMSE:{rmse:.3f} | MAPE:{mape:.1f}%"
+    metrics_line2 = f"SSIM:{ssim_str} | GradCorr:{grad_corr:.3f} | R²:{r2:.3f}"
     
-    metrics_text = (f"MAE:{mae:.3f} | RMSE:{rmse:.3f} | MAPE:{mape:.1f}%\n"
-                    f"SSIM:{ssim_val:.3f} | GradCorr:{grad_corr:.3f} | R²:{r2:.3f}")
-    ax3.set_xlabel(metrics_text, fontsize=9, family='monospace',
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.85))
-    
-    add_border(ax3)
-    plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04, ticks=[-2.0, -1.0, 0.0, 1.0, 2.0])
-    
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close()
+    metrics_y = cb_y - 0.10
+    fig.text(diff_center, metrics_y, f"{metrics_line1}\n{metrics_line2}",
+             ha="center", va="top", fontsize=10, family="monospace",
+             bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
+
+    plt.savefig(save_path, dpi=150, bbox_inches="tight", pad_inches=0.15)
+    plt.close("all")
     
     return {'mae': mae, 'rmse': rmse, 'r2': r2, 'ssim': ssim_val, 'grad_corr': grad_corr, 'mape': mape}
 

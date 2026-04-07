@@ -27,6 +27,7 @@ python scripts/fast_batch_inference.py \
     --logs logs \
     --num_samples 50 \
     --steps 50 \
-    --filter best_job_small_ae,grad_corr_high,grad_corr_low,grad_corr_med
+    --data_path data/augmented \
+    --filter grad_corr_low
 
 echo "Batch Inference finished."
