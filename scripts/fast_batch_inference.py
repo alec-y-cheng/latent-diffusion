@@ -243,155 +243,147 @@ def plot_domain_panel(ax, x_input, target_W=None, target_H=None):
     for sp in ax.spines.values(): sp.set_visible(False)
 
 def save_standardized_plot(y_true, y_pred, save_path, x_raw_cond=None):
-    """
-    Matches save_pred_vs_true from WindTransformer_windowed reference.
-    y_true, y_pred: 2D numpy arrays in physical space.
-    x_raw_cond: numpy (C, H, W) in ORIGINAL (un-normalized) data coordinates for domain panel.
-    """
     if y_true.ndim > 2: y_true = y_true.squeeze()
     if y_pred.ndim > 2: y_pred = y_pred.squeeze()
-    
+
     H, W = y_true.shape
     diff = y_pred - y_true
-    
-    # Shared limits based on Ground Truth (Matching WindTransformer_windowed.py)
-    vmin = float(y_true.min())
-    vmax = float(y_true.max())
-    
-    # --- Domain Masking (Circular) ---
+
+    # --- Circular domain mask --- pixels outside become transparent
     center_y, center_x = H // 2, W // 2
-    radius = min(H, W) // 2 - 5
+    radius = min(H, W) // 2
     Y_coords, X_coords = np.ogrid[:H, :W]
     dist = np.sqrt((X_coords - center_x)**2 + (Y_coords - center_y)**2)
     domain_mask = dist < radius
     outside = ~domain_mask
-    
-    # Force non-negative physics for visualization
-    y_pred = np.maximum(y_pred, 0)
-    
-    y_true_vis = np.ma.masked_where(outside, y_true)
-    y_pred_vis = np.ma.masked_where(outside, y_pred)
-    diff_vis = np.ma.masked_where(outside, diff)
-    
-    # --- Metrics ---
+
+    # --- Metrics (computed inside circle) ---
     diff_masked = diff[domain_mask]
     abs_diff_masked = np.abs(diff_masked)
-    
     mae = np.mean(abs_diff_masked)
     rmse = np.sqrt(np.mean(diff_masked**2))
-    
+
     gt_masked = y_true[domain_mask]
     gt_abs = np.abs(gt_masked)
     valid_for_mape = gt_abs > 0.1
-    if np.any(valid_for_mape):
-        mape = np.mean(abs_diff_masked[valid_for_mape] / gt_abs[valid_for_mape]) * 100.0
-    else:
-        mape = 0.0
+    mape = np.mean(abs_diff_masked[valid_for_mape] / gt_abs[valid_for_mape]) * 100.0 if np.any(valid_for_mape) else 0.0
 
     if ssim_func:
-        data_range = max(y_true.max(), y_pred.max()) - min(y_true.min(), y_pred.min())
-        if data_range == 0: data_range = 1.0
-        ssim_val = ssim_func(y_true, y_pred, data_range=data_range)
+        # Range is now 0 to 2
+        ssim_val = ssim_func(y_true, y_pred, data_range=2.0)
     else:
         ssim_val = -1.0
-        
+
     grad_corr = compute_gradient_correlation(y_pred, y_true, domain_mask)
     
     # R² (coefficient of determination) within circular domain
     ss_res = np.sum(diff_masked ** 2)
     ss_tot = np.sum((gt_masked - np.mean(gt_masked)) ** 2)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
-    
-    # --- Plotting ---
-    fig = plt.figure(figsize=(24, 6))
-    grid_size = (1, 4)
 
-    # 1. Domain Setup — use raw un-normalized cond at original resolution
-    ax0 = plt.subplot(grid_size[0], grid_size[1], 1)
+    # --- Masked arrays: outside circle → transparent (not dark) ---
+    y_true_vis = np.ma.masked_where(outside, y_true)
+    y_pred_vis = np.ma.masked_where(outside, y_pred)
+    diff_vis   = np.ma.masked_where(outside, diff)
+
+    # Shared scale for GT and Prediction (Hardcoded per WindTransformer reference)
+    vmin = 0.0
+    vmax = 2.0
+
+    # Shared title badge style matching WindTransformer reference
+    title_kwargs = dict(pad=36, fontsize=15, fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke",
+                                  edgecolor="gray", alpha=0.9))
+
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    fig.patch.set_facecolor("white")   # white background so masked = white, not grey
+
+    # Panel 1: Domain Setup
+    ax0 = axes[0]
     if x_raw_cond is not None and x_raw_cond.shape[0] >= 8:
         plot_domain_panel(ax0, x_raw_cond, target_W=W, target_H=H)
     elif x_raw_cond is not None and x_raw_cond.shape[0] > 0:
         ax0.imshow(x_raw_cond[0], cmap='gray', origin='lower')
-        ax0.set_title("Input (Mask)")
+        ax0.set_title("Domain Setup", **title_kwargs)
     else:
         ax0.text(0.5, 0.5, "No Vis", ha='center')
-        ax0.set_title("Input")
+        ax0.set_title("Domain Setup", **title_kwargs)
+    # Spines already hidden inside plot_domain_panel; ensure no box frame
+    ax0.set_xticks([]); ax0.set_yticks([])
+    for sp in ax0.spines.values(): sp.set_visible(False)
 
-    # 2. Ground Truth — building contour from ch4 mask at full resolution
-    ax1 = plt.subplot(grid_size[0], grid_size[1], 2)
-    ax1.set_title("Ground Truth", pad=36, fontsize=15, fontweight="bold",
-                   bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
-    im1 = ax1.imshow(y_true_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
-    if x_raw_cond is not None and x_raw_cond.shape[0] > 4:
-        bldg_vis = x_raw_cond[4] > 0  # building height mask, shape (orig_H, orig_W)
-        ax1.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.8, origin='lower', extent=[0, W, 0, H])
+    # Panel 2: Ground Truth — shared scale, circular mask, building contour
+    ax1 = axes[1]
+    im1 = ax1.imshow(y_true_vis, origin='lower', cmap='viridis',
+                     vmin=vmin, vmax=vmax, interpolation='nearest')
+    ax1.set_facecolor("white")
+    ax1.set_title("Ground Truth", **title_kwargs)
     ax1.set_xticks([]); ax1.set_yticks([])
-    for spine in ax1.spines.values(): spine.set_visible(False)
-
-    # 3. Prediction
-    ax2 = plt.subplot(grid_size[0], grid_size[1], 3)
-    ax2.set_title("Prediction", pad=36, fontsize=15, fontweight="bold",
-                   bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
-    im2 = ax2.imshow(y_pred_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
+    for sp in ax1.spines.values(): sp.set_visible(False)
     if x_raw_cond is not None and x_raw_cond.shape[0] > 4:
-        ax2.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.8, origin='lower', extent=[0, W, 0, H])
+        bldg_vis = x_raw_cond[4] > 0
+        # Use contourf or colors='black' with small linewidth for solid black
+        ax1.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.5,
+                    origin='lower', extent=[0, W, 0, H])
+
+    # Panel 3: Prediction — same shared scale
+    ax2 = axes[2]
+    im2 = ax2.imshow(y_pred_vis, origin='lower', cmap='viridis',
+                     vmin=vmin, vmax=vmax, interpolation='nearest')
+    ax2.set_facecolor("white")
+    ax2.set_title("Prediction", **title_kwargs)
     ax2.set_xticks([]); ax2.set_yticks([])
-    for spine in ax2.spines.values(): spine.set_visible(False)
+    for sp in ax2.spines.values(): sp.set_visible(False)
+    if x_raw_cond is not None and x_raw_cond.shape[0] > 4:
+        ax2.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.5,
+                    origin='lower', extent=[0, W, 0, H])
 
-    # 4. Difference
-    ax3 = plt.subplot(grid_size[0], grid_size[1], 4)
-    im3 = ax3.imshow(diff_vis, cmap='RdBu', vmin=-2.0, vmax=2.0, origin='lower', interpolation='nearest')
-    ax3.set_title("Diff (Pred - GT)", pad=36, fontsize=15, fontweight="bold",
-                   bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
+    # Panel 4: Difference — clipped to [-2, 2] + metrics
+    ax3 = axes[3]
+    im3 = ax3.imshow(diff_vis, cmap='RdBu', vmin=-2.0, vmax=2.0,
+                     origin='lower', interpolation='nearest')
+    ax3.set_facecolor("white")
+    ax3.set_title("Diff (Pred - GT)", **title_kwargs)
     ax3.set_xticks([]); ax3.set_yticks([])
-    for spine in ax3.spines.values(): spine.set_visible(False)
+    for sp in ax3.spines.values(): sp.set_visible(False)
 
+    # --- Precise Legend Placement (Matching Reference) ---
     plt.tight_layout(pad=1.5)
     fig.canvas.draw()
-
-    # Align titles horizontally
-    all_axes = [ax0, ax1, ax2, ax3]
-    fig_ys = []
-    for a in all_axes:
-        tx, ty = a.title.get_position()
-        fig_y = a.transAxes.transform((tx, ty))[1]
-        fig_ys.append(fig_y)
-    target_fig_y = max(fig_ys)
-    for a in all_axes:
-        tx, _ = a.title.get_position()
-        new_axes_y = a.transAxes.inverted().transform((0, target_fig_y))[1]
-        a.title.set_position((tx, new_axes_y))
-
-    fig.canvas.draw()
-
-    # Horizontal colorbars
+    
+    # Get positions after tight_layout
     bb1 = ax1.get_position()
     bb2 = ax2.get_position()
     bb3 = ax3.get_position()
     cb_w = bb3.width
-    cb_y = min(bb1.y0, bb3.y0) - 0.12
-
+    cb_y = min(bb1.y0, bb3.y0) - 0.12 # Leave space under plots
+    
+    # Shared horizontal colorbar for GT/Pred
     shared_center = (bb1.x0 + bb2.x1) / 2
     cax_shared = fig.add_axes([shared_center - cb_w / 2, cb_y, cb_w, 0.025])
     fig.colorbar(im1, cax=cax_shared, orientation="horizontal")
-
+    
+    # Horizontal colorbar for Diff
     diff_center = bb3.x0 + bb3.width / 2
     cax_diff = fig.add_axes([diff_center - cb_w / 2, cb_y, cb_w, 0.025])
     fig.colorbar(im3, cax=cax_diff, orientation="horizontal")
-
-    # Metrics text
+    
+    # Metrics display below colorbars
     ssim_str = f"{ssim_val:.3f}" if ssim_val >= 0 else "N/A"
     metrics_line1 = f"MAE:{mae:.3f} | RMSE:{rmse:.3f} | MAPE:{mape:.1f}%"
-    metrics_line2 = f"SSIM:{ssim_str} | GradCorr:{grad_corr:.3f} | R²:{r2:.3f}"
+    metrics_line2 = f"SSIM:{ssim_str} | GradCorr:{grad_corr:.3f} | R\u00b2:{r2:.3f}"
     
-    metrics_y = cb_y - 0.10
-    fig.text(diff_center, metrics_y, f"{metrics_line1}\n{metrics_line2}",
+    fig.text(diff_center, cb_y - 0.10, f"{metrics_line1}\n{metrics_line2}",
              ha="center", va="top", fontsize=10, family="monospace",
              bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
 
-    plt.savefig(save_path, dpi=150, bbox_inches="tight", pad_inches=0.15)
-    plt.close("all")
-    return r2
+    # Save with enough bottom padding for the new legends
+    plt.savefig(save_path, dpi=150, bbox_inches="tight", pad_inches=0.15, facecolor="white")
+    plt.close()
+    
+    return {"mae": mae, "rmse": rmse, "r2": r2, "mape": mape, "ssim": ssim_val, "grad_corr": grad_corr}
+
+
 
 def load_model_from_config(config, ckpt):
     print(f"Loading model state from {ckpt}...")
@@ -516,23 +508,21 @@ def main():
             os.makedirs(outdir, exist_ok=True)
             
             model_metrics = []
-            
+
             for i, idx in enumerate(tqdm(indices, desc=exp_name)):
                 item = dataset[idx]
-                x_raw = item['image']   # GT wind field
-                c_raw = item['cond']    # conditioning (64x64 normalized)
-                
-                # Also grab raw (un-normalized) X for visualization
-                # The dataset stores normalized data; we need the original for domain panel.
-                # Re-load raw item from dataset files using dataset internals.
+                x_raw = item['image']
+                c_raw = item['cond']
+
+                # Load raw un-normalized X for the domain panel visualization
                 raw_x_np = None
                 try:
                     chunk_idx, local_idx = dataset.indices[idx]
                     raw_x_np = np.array(dataset.data_chunks_x[chunk_idx][local_idx], dtype=np.float32)
-                    # raw_x_np shape: (C, H, W) in original physical coordinates
                 except Exception:
-                    pass  # If unavailable, domain panel will fall back gracefully
+                    pass  # domain panel will fall back gracefully
 
+                # --- Exact old commit logic: put everything on CUDA, permute if channel-last ---
                 if isinstance(x_raw, torch.Tensor):
                     x_gt = x_raw.unsqueeze(0).cuda()
                     cond = c_raw.unsqueeze(0).cuda()
@@ -540,10 +530,9 @@ def main():
                     x_gt = torch.from_numpy(x_raw).unsqueeze(0).cuda()
                     cond = torch.from_numpy(c_raw).unsqueeze(0).cuda()
 
-                # Dataset returns channel-last (H, W, C) — permute to (B, C, H, W)
-                if x_gt.ndim == 4 and x_gt.shape[-1] < x_gt.shape[-2]:
+                if x_gt.ndim == 4 and x_gt.shape[-1] < x_gt.shape[1]:
                     x_gt = x_gt.permute(0, 3, 1, 2)
-                if cond.ndim == 4 and cond.shape[-1] < cond.shape[-2]:
+                if cond.ndim == 4 and cond.shape[-1] < cond.shape[1]:
                     cond = cond.permute(0, 3, 1, 2)
 
                 shape = (model.channels, model.image_size, model.image_size)
@@ -555,70 +544,26 @@ def main():
                 t1 = time.time()
                 inference_time = t1 - t0
 
-                # pred shape: (1, 1, H_dec, W_dec) e.g. (1,1,504,504)
-                pred_np = x_samples.cpu().float().numpy()[0, 0]
+                # --- Exact old commit logic: extract numpy directly in [-1,1] space ---
+                # Then un-normalize to [0, 2] per WindTransformer reference
+                pred_np = x_samples.cpu().numpy()[0, 0] + 1.0
+                gt_np = x_gt.cpu().numpy()[0, 0] + 1.0
 
-                # gt comes from dataset as (1, C, 512, 512) or (1, 1, 512, 512)
-                # Take channel 0 and resize to match pred
-                gt_tensor = x_gt.float()
-                if gt_tensor.shape[1] > 1:
-                    gt_tensor = gt_tensor[:, :1, :, :]  # keep only wind channel
-                if gt_tensor.shape[-1] != pred_np.shape[-1] or gt_tensor.shape[-2] != pred_np.shape[-2]:
-                    gt_tensor = torch.nn.functional.interpolate(
-                        gt_tensor, size=pred_np.shape[-2:], mode='bilinear', align_corners=False)
-                gt_np = gt_tensor.cpu().numpy()[0, 0]
-
-                # Un-normalize from LDM [-1, 1] back to physical scale
-                pred_np = ((pred_np + 1.0) / 2.0) * dataset.range_y + dataset.min_y
-                gt_np   = ((gt_np   + 1.0) / 2.0) * dataset.range_y + dataset.min_y
-
-                # Ensure non-negative (wind speed is physical)
-                pred_np = np.maximum(pred_np, 0.0)
-
-                H, W = gt_np.shape
-                diff = pred_np - gt_np
-
-                # Circular domain mask
-                center_y, center_x = H // 2, W // 2
-                radius = min(H, W) // 2 - 5
-                Y_coords, X_coords = np.ogrid[:H, :W]
-                dist = np.sqrt((X_coords - center_x)**2 + (Y_coords - center_y)**2)
-                domain_mask = dist < radius
-
-                diff_masked      = diff[domain_mask]
-                abs_diff_masked  = np.abs(diff_masked)
-                gt_masked        = gt_np[domain_mask]
-
-                mae  = float(np.mean(abs_diff_masked))
-                rmse = float(np.sqrt(np.mean(diff_masked**2)))
-
-                gt_abs = np.abs(gt_masked)
-                valid_mape = gt_abs > 0.1
-                mape = float(np.mean(abs_diff_masked[valid_mape] / gt_abs[valid_mape]) * 100.0) if np.any(valid_mape) else 0.0
-
-                if ssim_func:
-                    data_range = max(gt_np.max(), pred_np.max()) - min(gt_np.min(), pred_np.min())
-                    if data_range == 0: data_range = 1.0
-                    ssim_val = float(ssim_func(gt_np, pred_np, data_range=data_range))
-                else:
-                    ssim_val = -1.0
-
-                grad_corr = float(compute_gradient_correlation(pred_np, gt_np, domain_mask))
-
-                ss_res = np.sum(diff_masked ** 2)
-                ss_tot = np.sum((gt_masked - np.mean(gt_masked)) ** 2)
-                r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 1e-12 else 0.0
-
-                model_metrics.append({
-                    "mae": mae, "rmse": rmse, "mape": mape,
-                    "r2": r2, "ssim": ssim_val, "grad_corr": grad_corr,
+                # Now we completely defer the plot to the function which also computes and returns metrics
+                save_path = os.path.join(outdir, f"sample_{idx}.png")
+                plot_metrics = save_standardized_plot(gt_np, pred_np, save_path, x_raw_cond=raw_x_np)
+                
+                # Collect metrics for aggregation
+                metrics = {
+                    "mae": plot_metrics['mae'],
+                    "rmse": plot_metrics['rmse'],
+                    "r2": plot_metrics['r2'],
+                    "mape": plot_metrics['mape'],
+                    "ssim": plot_metrics['ssim'],
+                    "grad_corr": plot_metrics['grad_corr'],
                     "inference_time": inference_time
-                })
-
-                # Save plot for first few samples
-                if i < 5:
-                    save_path = os.path.join(outdir, f"sample_{idx}.png")
-                    save_standardized_plot(gt_np, pred_np, save_path, x_raw_cond=raw_x_np)
+                }
+                model_metrics.append(metrics)
 
             # Save Summary
             df = pd.DataFrame(model_metrics)
@@ -636,7 +581,9 @@ def main():
             torch.cuda.empty_cache()
             
         except Exception as e:
+            import traceback
             print(f"  [Error] Failed processing {exp_name}: {e}")
+            traceback.print_exc()
 
     # Final Master CSV
     if all_summaries:

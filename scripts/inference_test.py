@@ -168,9 +168,9 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     H, W = y_true.shape
     diff = y_pred - y_true
     
-    # Shared limits based on Ground Truth (Matching WindTransformer_windowed.py)
-    vmin = float(y_true.min())
-    vmax = float(y_true.max())
+    # Shared limits (Hardcoded per WindTransformer_windowed reference)
+    vmin = 0.0
+    vmax = 2.0
     
     # --- Domain Masking (Circular) ---
     center_y, center_x = H // 2, W // 2
@@ -203,9 +203,8 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
         mape = 0.0
 
     if ssim_func:
-        data_range = max(y_true.max(), y_pred.max()) - min(y_true.min(), y_pred.min())
-        if data_range == 0: data_range = 1.0
-        ssim_val = ssim_func(y_true, y_pred, data_range=data_range)
+        # Range is now 0 to 2
+        ssim_val = ssim_func(y_true, y_pred, data_range=2.0)
     else:
         ssim_val = -1.0
         
@@ -243,7 +242,8 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
                    bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
     im1 = ax1.imshow(y_true_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
     if input_cond is not None and input_cond.shape[0] > 0:
-        ax1.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+        # Solid black buildings per request
+        ax1.contour(input_cond[0] <= 0, levels=[0.5], colors='black', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
     ax1.set_xticks([]); ax1.set_yticks([])
     for spine in ax1.spines.values(): spine.set_visible(False)
 
@@ -253,7 +253,8 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
                    bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
     im2 = ax2.imshow(y_pred_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
     if input_cond is not None and input_cond.shape[0] > 0:
-        ax2.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+        # Solid black buildings per request
+        ax2.contour(input_cond[0] <= 0, levels=[0.5], colors='black', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
     ax2.set_xticks([]); ax2.set_yticks([])
     for spine in ax2.spines.values(): spine.set_visible(False)
 
@@ -264,52 +265,39 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
                    bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
     ax3.set_xticks([]); ax3.set_yticks([])
     for spine in ax3.spines.values(): spine.set_visible(False)
-
+    # --- Precise Legend Placement (Matching Reference) ---
     plt.tight_layout(pad=1.5)
     fig.canvas.draw()
-
-    # Align titles horizontally
-    all_axes = [ax0, ax1, ax2, ax3]
-    fig_ys = []
-    for a in all_axes:
-        tx, ty = a.title.get_position()
-        fig_y = a.transAxes.transform((tx, ty))[1]
-        fig_ys.append(fig_y)
-    target_fig_y = max(fig_ys)
-    for a in all_axes:
-        tx, _ = a.title.get_position()
-        new_axes_y = a.transAxes.inverted().transform((0, target_fig_y))[1]
-        a.title.set_position((tx, new_axes_y))
-
-    fig.canvas.draw()
-
-    # Horizontal colorbars
+    
+    # Get positions after tight_layout
     bb1 = ax1.get_position()
     bb2 = ax2.get_position()
     bb3 = ax3.get_position()
     cb_w = bb3.width
-    cb_y = min(bb1.y0, bb3.y0) - 0.12
-
+    cb_y = min(bb1.y0, bb3.y0) - 0.12 # Leave space under plots
+    
+    # Shared horizontal colorbar for GT/Pred
     shared_center = (bb1.x0 + bb2.x1) / 2
     cax_shared = fig.add_axes([shared_center - cb_w / 2, cb_y, cb_w, 0.025])
     fig.colorbar(im1, cax=cax_shared, orientation="horizontal")
-
+    
+    # Horizontal colorbar for Diff
     diff_center = bb3.x0 + bb3.width / 2
     cax_diff = fig.add_axes([diff_center - cb_w / 2, cb_y, cb_w, 0.025])
     fig.colorbar(im3, cax=cax_diff, orientation="horizontal")
-
-    # Metrics text
+    
+    # Metrics display below colorbars
     ssim_str = f"{ssim_val:.3f}" if ssim_val >= 0 else "N/A"
     metrics_line1 = f"MAE:{mae:.3f} | RMSE:{rmse:.3f} | MAPE:{mape:.1f}%"
     metrics_line2 = f"SSIM:{ssim_str} | GradCorr:{grad_corr:.3f} | R²:{r2:.3f}"
     
-    metrics_y = cb_y - 0.10
-    fig.text(diff_center, metrics_y, f"{metrics_line1}\n{metrics_line2}",
+    fig.text(diff_center, cb_y - 0.10, f"{metrics_line1}\n{metrics_line2}",
              ha="center", va="top", fontsize=10, family="monospace",
              bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
 
-    plt.savefig(save_path, dpi=150, bbox_inches="tight", pad_inches=0.15)
-    plt.close("all")
+    # Save with enough bottom padding for the new legends
+    plt.savefig(save_path, dpi=150, bbox_inches="tight", pad_inches=0.15, facecolor="white")
+    plt.close()
     
     return {'mae': mae, 'rmse': rmse, 'r2': r2, 'ssim': ssim_val, 'grad_corr': grad_corr, 'mape': mape}
 
@@ -419,9 +407,9 @@ def main():
         pred_np = x_samples.cpu().numpy()[0, 0] # (H, W) or (C, H, W)? Assuming single channel target
         gt_np = x_gt.cpu().numpy()[0, 0]
         
-        # Un-normalize from LDM [-1, 1] range back to physical scale (e.g. 0 to ~2)
-        pred_np = ((pred_np + 1.0) / 2.0) * dataset.range_y + dataset.min_y
-        gt_np = ((gt_np + 1.0) / 2.0) * dataset.range_y + dataset.min_y
+        # Un-normalize from LDM [-1, 1] range to [0, 2] per WindTransformer reference
+        pred_np = pred_np + 1.0
+        gt_np = gt_np + 1.0
         
         # Visualization Input (Conditioning)
         save_path = os.path.join(args.outdir, f"test_sample_{i:03d}_idx_{idx}.png")

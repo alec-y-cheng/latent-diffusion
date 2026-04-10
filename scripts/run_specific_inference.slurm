@@ -25,9 +25,9 @@ echo "Starting Fast Batch Inference for specific models..."
 # Change the --filter argument to include any comma-separated folders you want
 python scripts/fast_batch_inference.py \
     --logs logs \
-    --num_samples 50 \
+    --num_samples 10 \
     --steps 50 \
     --data_path data/augmented \
-    --filter grad_corr_low
+    --filter grad_corr_low_highlr,grad_corr_low_noclip,pinns_baseline_base,grad_corr_low_real,grad_corr_med_real,grad_corr_high_real,pinns_baseline_wavelet,pinns_bc_heavy,wavelet_grad_corr,physics_hybrid_master
 
 echo "Batch Inference finished."
