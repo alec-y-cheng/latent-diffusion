@@ -88,5 +88,5 @@ lightning:
         log_on_batch_idx: True
 
   trainer:
-    precision: 16
+    precision: 32
     benchmark: True

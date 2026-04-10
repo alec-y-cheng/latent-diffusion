@@ -39,7 +39,7 @@ class GradCorrLoss(nn.Module):
         pred_ss = (pred_c ** 2).sum(dim=1)
         true_ss = (true_c ** 2).sum(dim=1)
         
-        denom = torch.sqrt(pred_ss * true_ss) + 1e-8
+        denom = torch.sqrt(pred_ss * true_ss) + 1e-5
         
         cov = (pred_c * true_c).sum(dim=1)
         corr = cov / denom
