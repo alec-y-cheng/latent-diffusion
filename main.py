@@ -2,6 +2,8 @@ import argparse, os, sys, datetime, glob, importlib, csv
 import numpy as np
 import time
 import torch
+import subprocess
+import threading
 import torchvision
 import pytorch_lightning as pl
 
@@ -237,6 +239,37 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers, worker_init_fn=init_fn)
 
 
+class CSVEpochLogger(Callback):
+    def __init__(self):
+        super().__init__()
+        self.csv_path = None
+        self.header_written = False
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        # We write on val epoch end because it usually happens right after train epoch end
+        if self.csv_path is None:
+            self.csv_path = os.path.join(pl_module.logger.save_dir, "epoch_metrics.csv")
+            
+        metrics = trainer.callback_metrics
+        # Flatten and extract scalar values from tensors
+        row_dict = {"epoch": trainer.current_epoch, "step": trainer.global_step}
+        for k, v in metrics.items():
+            if isinstance(v, torch.Tensor) and v.numel() == 1:
+                row_dict[k] = v.item()
+            elif isinstance(v, (int, float)):
+                row_dict[k] = v
+
+        keys = sorted(list(row_dict.keys()))
+        
+        # Write to csv
+        file_exists = os.path.isfile(self.csv_path)
+        with open(self.csv_path, mode='a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=keys)
+            if not file_exists or not self.header_written:
+                writer.writeheader()
+                self.header_written = True
+            writer.writerow(row_dict)
+
 class SetupCallback(Callback):
     def __init__(self, resume, now, logdir, ckptdir, cfgdir, config, lightning_config):
         super().__init__()
@@ -309,7 +342,16 @@ class ImageLogger(Callback):
     @rank_zero_only
     def _testtube(self, pl_module, images, batch_idx, split):
         for k in images:
-            grid = torchvision.utils.make_grid(images[k])
+            img = images[k]
+            if img.shape[1] == 2:
+                # Pad C=2 to C=3 with zeros so add_image/make_grid works intuitively
+                padding = torch.zeros((img.shape[0], 1, img.shape[2], img.shape[3]), device=img.device)
+                img = torch.cat([img, padding], dim=1)
+            elif img.shape[1] > 3:
+                # Truncate to 3 channels for visualization to avoid Alpha channel interpretation
+                img = img[:, :3]
+                
+            grid = torchvision.utils.make_grid(img)
             grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
 
             tag = f"{split}/{k}"
@@ -322,10 +364,24 @@ class ImageLogger(Callback):
                   global_step, current_epoch, batch_idx):
         root = os.path.join(save_dir, "images", split)
         for k in images:
-            grid = torchvision.utils.make_grid(images[k], nrow=4)
+            img = images[k]
+            if img.shape[1] == 2:
+                # Pad to 3 channels (RGB) for PNG saving
+                padding = torch.zeros((img.shape[0], 1, img.shape[2], img.shape[3]), device=img.device)
+                img = torch.cat([img, padding], dim=1)
+            elif img.shape[1] > 3:
+                # Truncate to 3 channels for visualization to avoid Alpha channel interpretation
+                img = img[:, :3]
+            
+            grid = torchvision.utils.make_grid(img, nrow=4)
             if self.rescale:
                 grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
-            grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+            
+            # (C, H, W) -> (H, W, C)
+            grid = grid.transpose(0, 1).transpose(1, 2)
+            if grid.shape[-1] == 1:
+                grid = grid.squeeze(-1) # Grayscale (H, W)
+                
             grid = grid.numpy()
             grid = (grid * 255).astype(np.uint8)
             filename = "{}_gs-{:06}_e-{:06}_b-{:06}.png".format(
@@ -422,6 +478,51 @@ class CUDACallback(Callback):
         except AttributeError:
             pass
 
+
+class InferenceCallback(Callback):
+    def __init__(self, every_n_epochs=10):
+        self.every_n_epochs = every_n_epochs
+
+    def on_train_epoch_end(self, trainer, pl_module, outputs=None):
+        # trainer.current_epoch is 0-indexed, so we add 1 for "nth epoch".
+        epoch = trainer.current_epoch + 1
+        if epoch % self.every_n_epochs != 0:
+            return
+
+        logdir = getattr(trainer, 'logdir', None)
+        if not logdir:
+            return
+            
+        exp_name = os.path.basename(logdir)
+        outdir_suffix = f"inference_epoch_{epoch}"
+        
+        # Find the experiment's own saved config for correct dataset loading
+        cfg_dir = os.path.join(logdir, "configs")
+        default_config = "configs/latent-diffusion/cfd_ldm.yaml"  # fallback
+        if os.path.isdir(cfg_dir):
+            # Look for project.yaml or *-project.yaml
+            proj = os.path.join(cfg_dir, "project.yaml")
+            if os.path.exists(proj):
+                default_config = proj
+            else:
+                import glob as _glob
+                candidates = _glob.glob(os.path.join(cfg_dir, "*-project.yaml"))
+                if candidates:
+                    default_config = candidates[0]
+        
+        def run_inference():
+            print(f"\n[InferenceCallback] Starting background fast_batch_inference.py for epoch {epoch}...")
+            cmd = (
+                f"python scripts/fast_batch_inference.py"
+                f" --logs {os.path.dirname(logdir)}"
+                f" --filter {exp_name}"
+                f" --default_config {default_config}"
+                f" --outdir_suffix {outdir_suffix}"
+                f" --num_samples 5"
+            )
+            subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+        threading.Thread(target=run_inference, daemon=True).start()
 
 if __name__ == "__main__":
     # custom parser to specify config files, train, test and debug mode,
@@ -526,8 +627,10 @@ if __name__ == "__main__":
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
         # default to ddp for multi-gpu, disable for single-gpu overhead
-        if "gpus" in opt and len(opt.gpus.strip(',').split(',')) > 1:
-            trainer_config["accelerator"] = "ddp"
+        if "gpus" in opt and opt.gpus is not None:
+            gpu_str = str(opt.gpus)
+            if len(gpu_str.strip(',').split(',')) > 1:
+                trainer_config["accelerator"] = "ddp"
         
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
@@ -630,6 +733,15 @@ if __name__ == "__main__":
             },
             "cuda_callback": {
                 "target": "main.CUDACallback"
+            },
+            "inference_callback": {
+                "target": "main.InferenceCallback",
+                "params": {
+                    "every_n_epochs": 10
+                }
+            },
+            "csv_epoch_logger": {
+                "target": "main.CSVEpochLogger"
             },
         }
         if version.parse(pl.__version__) >= version.parse('1.4.0'):

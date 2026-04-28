@@ -78,7 +78,7 @@ submit_job "uk_grad_corr_low" "-n uk_grad_corr_low \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk.yaml"
-
+ <<'COMMENT'
 submit_job "uk_grad_corr_med" "-n uk_grad_corr_med \
  model.params.grad_corr_weight=0.5 \
  model.base_learning_rate=5.0e-7 \
@@ -100,7 +100,7 @@ submit_job "uk_grad_corr_high" "-n uk_grad_corr_high \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk.yaml"
-
+COMMENT
 
 # --- PINNsformer (physics-informed, wavelet UNet) ---
 
@@ -119,6 +119,10 @@ submit_job "uk_pinns_baseline" "-n uk_pinns_baseline \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
+
+
+ <<'COMMENT'
+
 
 submit_job "uk_pinns_bc_heavy" "-n uk_pinns_bc_heavy \
  model.params.use_pinn_loss=True \
@@ -149,7 +153,7 @@ submit_job "uk_physics_hybrid" "-n uk_physics_hybrid \
  lightning.callbacks.image_logger.params.batch_frequency=10000 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
-
+COMMENT
 
 # --- DID variants (uncomment when DID UK dataset is ready) ---
 # submit_job "uk_grad_corr_med_did" "-n uk_grad_corr_med_did \

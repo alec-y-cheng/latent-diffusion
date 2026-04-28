@@ -18,4 +18,4 @@ python main.py \
   --base configs/autoencoder/autoencoder_kl_32x32x4_uk.yaml \
   -t \
   --gpus 0, \
-  --resume_from_checkpoint logs/2026-04-27T01-43-36_autoencoder_kl_32x32x4_uk/checkpoints/last.ckpt
+  --resume_from_checkpoint logs/2026-04-27T15-01-16_autoencoder_kl_32x32x4_uk/checkpoints/last.ckpt
