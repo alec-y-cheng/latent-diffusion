@@ -7,66 +7,96 @@ class CFDDataset(Dataset):
     def __init__(self, data_path, split="train", split_ratio=0.9, size=None):
         """
         Custom Dataset for CFD Velocity Magnitude Fields.
-        Expects an .npz file with a 'Y' key containing shape (N, 1, H, W).
+        Supports .npz and .h5 files. 
+        Improved for multi-channel support with per-channel normalization.
         """
         self.data_path = data_path
         self.split = split
         self.split_ratio = split_ratio
         self.size = size
+        self.is_hdf5 = data_path.endswith('.h5')
+        self._h5f = None # Lazy handle for h5py
         
         try:
-            # Determine split index
-            # We load the file to get length and stats, 
-            # ideally this should be cached or handled more efficiently for huge datasets
-            with np.load(self.data_path) as data:
-                # Use mmap_mode='r' if the file is very large and uncompressed, 
-                # but 'Y' seems to be the key so we access it directly.
-                # If wrapped in NpzFile, we might load it into memory.
-                # Assuming 2000x1x504x504 floats -> ~2GB, fitting in memory is fine.
-                self.full_data = data['Y'] # Copy to memory
-                
-        except FileNotFoundError:
-            print(f"ERROR: Data file not found at {self.data_path}")
-            # Create dummy data for initialization check only if file strictly required
+            if self.is_hdf5:
+                import h5py
+                with h5py.File(self.data_path, 'r') as f:
+                    N = f['Y'].shape[0]
+                    self.num_samples = N
+                    split_idx = int(N * self.split_ratio)
+                    train_limit = min(500, split_idx)
+                    # Calculate stats from a training subset
+                    train_subset = f['Y'][:train_limit]
+                    self.min_val = np.min(train_subset, axis=(0, 2, 3)).reshape(-1, 1, 1)
+                    self.max_val = np.max(train_subset, axis=(0, 2, 3)).reshape(-1, 1, 1)
+            else:
+                # Use mmap_mode to avoid OOM on large NPZs
+                with np.load(self.data_path, mmap_mode='r') as data:
+                    self.full_data = data['Y']
+                    N = self.full_data.shape[0]
+                    self.num_samples = N
+                    split_idx = int(N * self.split_ratio)
+                    train_data = self.full_data[:split_idx]
+                    self.min_val = np.min(train_data, axis=(0, 2, 3)).reshape(-1, 1, 1)
+                    self.max_val = np.max(train_data, axis=(0, 2, 3)).reshape(-1, 1, 1)
+                    
+        except Exception as e:
+            print(f"ERROR: Could not load data from {self.data_path}: {e}")
+            self.num_samples = 10
+            self.is_hdf5 = False
             self.full_data = np.zeros((10, 1, 504, 504), dtype=np.float32)
+            self.min_val = np.array([0.0]).reshape(-1, 1, 1)
+            self.max_val = np.array([1.0]).reshape(-1, 1, 1)
 
-        num_samples = len(self.full_data)
-        split_idx = int(num_samples * self.split_ratio)
-        
-        # Calculate stats for normalization from Training split
-        train_data = self.full_data[:split_idx]
-        self.min_val = np.min(train_data)
-        self.max_val = np.max(train_data)
-
+        split_idx = int(self.num_samples * self.split_ratio)
         if self.split == "train":
-            self.data = self.full_data[:split_idx]
+            self.range_indices = (0, split_idx)
+            self.length = split_idx
         else:
-            self.data = self.full_data[split_idx:]
+            self.range_indices = (split_idx, self.num_samples)
+            self.length = self.num_samples - split_idx
             
-        print(f"CFDDataset ({self.split}): Samples={len(self.data)}, Min={self.min_val:.5f}, Max={self.max_val:.5f}")
+        print(f"CFDDataset ({self.split}): Samples={self.length}, Channels={self.min_val.shape[0]}")
+        for c in range(self.min_val.shape[0]):
+            print(f"  Ch {c}: Min={self.min_val[c,0,0]:.5f}, Max={self.max_val[c,0,0]:.5f}")
 
     def __len__(self):
-        return len(self.data)
+        return self.length
 
     def __getitem__(self, idx):
-        x = self.data[idx] # (1, 504, 504)
+        # 1. Resolve global index
+        global_idx = self.range_indices[0] + idx
         
-        # Normalize to [-1, 1] for best GAN/Autoencoder performance
-        # (x - min) / (max - min) -> [0, 1] -> *2 -1 -> [-1, 1]
+        # 2. Get Raw Data
+        if self.is_hdf5:
+            import h5py
+            if self._h5f is None:
+                self._h5f = h5py.File(self.data_path, 'r')
+            y = self._h5f['Y'][global_idx]
+        else:
+            y = self.full_data[global_idx]
+            
+        y = np.array(y, dtype=np.float32)
+        
+        # 3. Per-Channel Normalization to [-1, 1]
         range_val = self.max_val - self.min_val
-        if range_val == 0: range_val = 1e-6
+        range_val[range_val == 0] = 1e-6
         
-        x = (x - self.min_val) / range_val
-        x = x * 2.0 - 1.0
+        y = (y - self.min_val) / range_val
+        y = y * 2.0 - 1.0
         
-        # Ensure float32
-        x = torch.from_numpy(x).float()
+        # 4. Convert to Tensor
+        y_tensor = torch.from_numpy(y).float()
         
         if self.size is not None:
-            x = torch.nn.functional.interpolate(x.unsqueeze(0), size=(self.size, self.size), mode='bilinear', align_corners=False).squeeze(0)
+            y_tensor = torch.nn.functional.interpolate(
+                y_tensor.unsqueeze(0), 
+                size=(self.size, self.size), 
+                mode='bilinear', 
+                align_corners=False
+            ).squeeze(0)
             
-        # Key 'image' is standard for the LDM codebase
-        return {"image": x}
+        return {"image": y_tensor}
 
 class CFDTrain(CFDDataset):
     def __init__(self, data_path, size=None, **kwargs):
@@ -206,7 +236,7 @@ class CFDConditionalDataset(Dataset):
             self.max_x = np.max(stat_x, axis=(0, 2, 3)).reshape(-1, 1, 1)
             self.range_x = self.max_x - self.min_x
             self.range_x[self.range_x == 0] = 1e-6
-
+    
     def __len__(self):
         return self.length
 

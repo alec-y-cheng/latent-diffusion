@@ -409,10 +409,15 @@ class AutoencoderKL(pl.LightningModule):
         if not only_inputs:
             xrec, posterior = self(x)
             if x.shape[1] > 3:
-                # colorize with random projection
-                assert xrec.shape[1] > 3
-                x = self.to_rgb(x)
-                xrec = self.to_rgb(xrec)
+                if self.image_key == "segmentation":
+                    # colorize with random projection
+                    assert xrec.shape[1] > 3
+                    x = self.to_rgb(x)
+                    xrec = self.to_rgb(xrec)
+                else:
+                    # Multi-channel CFD data: truncate to first 3 channels for visualization
+                    x = x[:, :3]
+                    xrec = xrec[:, :3]
             log["samples"] = self.decode(torch.randn_like(posterior.sample()))
             log["reconstructions"] = xrec
         log["inputs"] = x

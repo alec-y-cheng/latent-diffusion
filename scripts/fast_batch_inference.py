@@ -24,31 +24,53 @@ except ImportError:
 
 # --- Helpers ---
 
+def fix_data_path(data_path):
+    """Fix /tmp/ data paths from saved SLURM configs back to real relative paths.
+    During training, datasets get cached to /tmp/data/... on the SLURM node.
+    The saved project.yaml remembers that /tmp path, but it doesn't exist
+    when running inference outside that specific SLURM job."""
+    if data_path and data_path.startswith('/tmp/'):
+        # Strip /tmp/ prefix to get relative path like data/augmented_did_h5
+        relative = data_path.lstrip('/tmp/')
+        # Ensure it starts with 'data/' 
+        if not relative.startswith('data/'):
+            relative = 'data/' + relative
+        if os.path.exists(relative):
+            print(f"  [fix_data_path] Remapped SLURM temp path {data_path} -> {relative}")
+            return relative
+    return data_path
+
 def get_experiment_groups(logs_dir, filter_str=None):
     groups = {}
     if not os.path.exists(logs_dir):
         print(f"Error: Logs directory '{logs_dir}' not found.")
         return {}
 
+    if filter_str:
+        filters = [f.strip() for f in filter_str.split(',')]
+    else:
+        filters = None
+
     for folder in os.listdir(logs_dir):
         path = os.path.join(logs_dir, folder)
         if not os.path.isdir(path):
             continue
-            
+
         # Filter Logic
         if "autoencoder" in folder.lower():
             continue
-        if filter_str:
-            filters = [f.strip() for f in filter_str.split(',')]
-            if not any(f in folder for f in filters):
-                continue
         try:
             parts = folder.split('_')
             if len(parts) < 2: continue
             timestamp_str = parts[0]
             exp_name = "_".join(parts[1:])
             dt = datetime.strptime(timestamp_str, "%Y-%m-%dT%H-%M-%S")
-            
+
+            # Apply filter against extracted exp_name with exact match
+            # to prevent substring collisions (e.g. physics_hybrid_master vs physics_hybrid_master_did)
+            if filters and exp_name not in filters:
+                continue
+
             if exp_name not in groups:
                 groups[exp_name] = []
             groups[exp_name].append({'path': path, 'timestamp': dt, 'folder': folder})
@@ -178,12 +200,23 @@ def plot_domain_panel(ax, x_input, target_W=None, target_H=None):
         ax.plot([cx, cx + R * np.cos(rad)], [cy, cy + R * np.sin(rad)],
                 color="#d0d0d0", linewidth=0.4, zorder=1)
 
-    # Building footprints — channel 4 is building height (>0 = building), per reference
-    bldg_mask = x_input[4] > 0
+    # Building footprints
+    if x_input.shape[0] == 15:
+        # DID dataset: SDF is at channel 0, building is where SDF <= 0
+        bldg_mask = x_input[0] <= 0
+    else:
+        # Normal 8-channel dataset: building height is at channel 4
+        bldg_mask = np.abs(x_input[4]) > 1e-6
+
     if np.any(bldg_mask):
         bldg_rgba = np.zeros((orig_H, orig_W, 4), dtype=np.float32)
         bldg_rgba[bldg_mask] = [0.15, 0.15, 0.15, 1.0]
         ax.imshow(bldg_rgba, origin="lower", extent=[0, W, 0, H], zorder=2)
+    else:
+        if x_input.shape[0] == 15:
+            print(f"  [plot_domain_panel] WARNING: No buildings detected in ch0. ch0 range: [{x_input[0].min():.4f}, {x_input[0].max():.4f}]")
+        else:
+            print(f"  [plot_domain_panel] WARNING: No buildings detected in ch4. ch4 range: [{x_input[4].min():.4f}, {x_input[4].max():.4f}]")
 
     # GAN / LDM area dashed circle
     if np.any(bldg_mask):
@@ -233,7 +266,7 @@ def plot_domain_panel(ax, x_input, target_W=None, target_H=None):
     gan_label_rad = np.radians(wind_dir_deg + 90)
     ax.text(cx + gan_r * 0.65 * np.cos(gan_label_rad),
             cy + gan_r * 0.65 * np.sin(gan_label_rad),
-            "GAN Area", ha="center", va="center", fontsize=9,
+            "LDM Area", ha="center", va="center", fontsize=9,
             color="goldenrod", fontstyle="italic", fontweight="bold",
             bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.8, edgecolor="none"), zorder=6)
 
@@ -320,11 +353,21 @@ def save_standardized_plot(y_true, y_pred, save_path, x_raw_cond=None):
     ax1.set_title("Ground Truth", **title_kwargs)
     ax1.set_xticks([]); ax1.set_yticks([])
     for sp in ax1.spines.values(): sp.set_visible(False)
-    if x_raw_cond is not None and x_raw_cond.shape[0] > 4:
-        bldg_vis = x_raw_cond[4] > 0
-        # Use contourf or colors='black' with small linewidth for solid black
-        ax1.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.5,
-                    origin='lower', extent=[0, W, 0, H])
+    if x_raw_cond is not None and x_raw_cond.shape[0] >= 4:
+        if x_raw_cond.shape[0] == 15:
+            # DID dataset: SDF is at channel 0, building is where SDF <= 0
+            bldg_vis = x_raw_cond[0] <= 0
+        else:
+            # Normal 8-channel dataset: building height is at channel 4
+            bldg_vis = x_raw_cond[4] > 0
+        # Filled white overlay for buildings (solid, full opacity)
+        if np.any(bldg_vis):
+            # Initialize fully transparent, then set building pixels to opaque white
+            bldg_overlay = np.zeros((bldg_vis.shape[0], bldg_vis.shape[1], 4), dtype=np.float32)
+            bldg_overlay[bldg_vis] = [1.0, 1.0, 1.0, 1.0]  # white, full opacity
+            ax1.imshow(bldg_overlay, origin='lower', extent=[0, W, 0, H],
+                       interpolation='nearest', zorder=5)
+
 
     # Panel 3: Prediction — same shared scale
     ax2 = axes[2]
@@ -335,8 +378,11 @@ def save_standardized_plot(y_true, y_pred, save_path, x_raw_cond=None):
     ax2.set_xticks([]); ax2.set_yticks([])
     for sp in ax2.spines.values(): sp.set_visible(False)
     if x_raw_cond is not None and x_raw_cond.shape[0] > 4:
-        ax2.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.5,
-                    origin='lower', extent=[0, W, 0, H])
+        if np.any(bldg_vis):
+            # Same solid white overlay on prediction panel
+            ax2.imshow(bldg_overlay, origin='lower', extent=[0, W, 0, H],
+                       interpolation='nearest', zorder=5)
+
 
     # Panel 4: Difference — clipped to [-2, 2] + metrics
     ax3 = axes[3]
@@ -436,7 +482,10 @@ def main():
     # to ensure all models are compared on the exact same validation images.
     base_config = OmegaConf.load(args.default_config)
     dataset_conf = base_config.data.params.validation
-    if args.data_path: dataset_conf.params.data_path = args.data_path
+    if args.data_path:
+        dataset_conf.params.data_path = args.data_path
+    else:
+        dataset_conf.params.data_path = fix_data_path(dataset_conf.params.data_path)
     
     # Quick instantiation just to get the length
     dataset = instantiate_from_config(dataset_conf)
@@ -494,7 +543,10 @@ def main():
             # Dynamically instantiate the exact dataset required by this model's config
             # (e.g. 15-channel DID vs 8-channel original) to prevent shape mismatches
             dataset_conf = run_config.data.params.validation
-            if args.data_path: dataset_conf.params.data_path = args.data_path
+            if args.data_path:
+                dataset_conf.params.data_path = args.data_path
+            else:
+                dataset_conf.params.data_path = fix_data_path(dataset_conf.params.data_path)
             dataset = instantiate_from_config(dataset_conf)
             
             # Force validation set augmentation to OFF to ensure GT and Predictions align
@@ -518,7 +570,14 @@ def main():
                 raw_x_np = None
                 try:
                     chunk_idx, local_idx = dataset.indices[idx]
-                    raw_x_np = np.array(dataset.data_chunks_x[chunk_idx][local_idx], dtype=np.float32)
+                    if getattr(dataset, 'is_hdf5', False):
+                        # HDF5 backend (DID datasets)
+                        import h5py
+                        with h5py.File(dataset.files[0], 'r') as h5f:
+                            raw_x_np = np.array(h5f['X'][local_idx], dtype=np.float32)
+                    else:
+                        # npz mmap backend (standard datasets)
+                        raw_x_np = np.array(dataset.data_chunks_x[chunk_idx][local_idx], dtype=np.float32)
                 except Exception:
                     pass  # domain panel will fall back gracefully
 
@@ -585,13 +644,18 @@ def main():
             print(f"  [Error] Failed processing {exp_name}: {e}")
             traceback.print_exc()
 
-    # Final Master CSV
+    # Final Master CSV – append to existing file if present
     if all_summaries:
         master_df = pd.DataFrame(all_summaries)
         cols = ['Experiment', 'Timestamp'] + [c for c in master_df.columns if c not in ['Experiment', 'Timestamp']]
         master_df = master_df[cols]
-        master_df.to_csv("all_experiments_fast_summary.csv", index=False)
-        print("\nSaved all_experiments_fast_summary.csv")
+        csv_path = "all_experiments_fast_summary.csv"
+        if os.path.exists(csv_path):
+            # Append without rewriting header
+            master_df.to_csv(csv_path, mode='a', header=False, index=False)
+        else:
+            master_df.to_csv(csv_path, index=False)
+        print("\nAppended to all_experiments_fast_summary.csv")
 
 if __name__ == "__main__":
     main()

@@ -243,7 +243,7 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     im1 = ax1.imshow(y_true_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
     if input_cond is not None and input_cond.shape[0] > 0:
         # Solid black buildings per request
-        ax1.contour(input_cond[0] <= 0, levels=[0.5], colors='black', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+        ax1.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
     ax1.set_xticks([]); ax1.set_yticks([])
     for spine in ax1.spines.values(): spine.set_visible(False)
 
@@ -254,7 +254,7 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     im2 = ax2.imshow(y_pred_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
     if input_cond is not None and input_cond.shape[0] > 0:
         # Solid black buildings per request
-        ax2.contour(input_cond[0] <= 0, levels=[0.5], colors='black', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+        ax2.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
     ax2.set_xticks([]); ax2.set_yticks([])
     for spine in ax2.spines.values(): spine.set_visible(False)
 

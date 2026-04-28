@@ -45,13 +45,28 @@ class LPIPSWithDiscriminator(nn.Module):
     def forward(self, inputs, reconstructions, posteriors, optimizer_idx,
                 global_step, last_layer=None, cond=None, split="train",
                 weights=None):
-        # Handle grayscale inputs: duplicate channels for LPIPS/Discriminator
-        if inputs.shape[1] == 1:
-            inputs_3c = inputs.repeat(1, 3, 1, 1)
-            reconstructions_3c = reconstructions.repeat(1, 3, 1, 1)
-        else:
+        # Handle channel mismatch for LPIPS/Discriminator (expects RGB-like 3-channel input)
+        c = inputs.shape[1]
+        if c == 3:
             inputs_3c = inputs
             reconstructions_3c = reconstructions
+        elif c == 1:
+            inputs_3c = inputs.repeat(1, 3, 1, 1)
+            reconstructions_3c = reconstructions.repeat(1, 3, 1, 1)
+        elif c == 2:
+            # Pad C=2 to C=3 with a zero channel
+            padding = torch.zeros((inputs.shape[0], 1, inputs.shape[2], inputs.shape[3]), device=inputs.device)
+            inputs_3c = torch.cat([inputs, padding], dim=1)
+            reconstructions_3c = torch.cat([reconstructions, padding], dim=1)
+        else:
+            # Fallback for other channel counts: truncate or pad to 3
+            if c > 3:
+                inputs_3c = inputs[:, :3]
+                reconstructions_3c = reconstructions[:, :3]
+            else:
+                padding = torch.zeros((inputs.shape[0], 3 - c, inputs.shape[2], inputs.shape[3]), device=inputs.device)
+                inputs_3c = torch.cat([inputs, padding], dim=1)
+                reconstructions_3c = torch.cat([reconstructions, padding], dim=1)
 
         rec_loss = torch.abs(inputs.contiguous() - reconstructions.contiguous())
         if self.perceptual_weight > 0:
