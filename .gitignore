@@ -30,6 +30,7 @@ data/*.h5
 data/*.hdf5
 data/raw/
 data/processed/
+data/
 
 # -------------------------
 # OS / editor junk

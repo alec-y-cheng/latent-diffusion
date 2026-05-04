@@ -28,6 +28,7 @@ echo "Starting Fast Batch Inference for specific models..."
 
 
 # DID (15-channel) models — must use augmented_did_h5 dataset
+ <<'COMMENT'
 python scripts/fast_batch_inference.py \
     --logs logs \
     --num_samples 10 \
@@ -45,3 +46,11 @@ python scripts/fast_batch_inference.py \
     --steps 50 \
     --data_path data/augmented \
     --filter grad_corr_low_highlr,grad_corr_low_noclip,pinns_baseline_base,grad_corr_low_real,grad_corr_med_real,grad_corr_high_real,pinns_baseline_wavelet,pinns_bc_heavy,wavelet_grad_corr,physics_hybrid_master
+COMMENT
+
+python scripts/fast_batch_inference.py \
+    --logs logs \
+    --num_samples 5 \
+    --steps 50 \
+    --data_path data/uk_set/dataset_uk.h5 \
+    --filter uk_grad_corr_low,uk_pinns_baseline

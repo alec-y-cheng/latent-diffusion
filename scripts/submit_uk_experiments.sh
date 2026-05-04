@@ -66,6 +66,8 @@ submit_job() {
 #                                         roof speed, roof turbulence)
 # ============================================================================
 
+#logs/2026-04-28T02-29-06_autoencoder_kl_32x32x4_uk/checkpoints/epoch=000097.ckpt
+
 # --- Standard UNet (no physics) ---
 
 submit_job "uk_grad_corr_low" "-n uk_grad_corr_low \
@@ -75,7 +77,7 @@ submit_job "uk_grad_corr_low" "-n uk_grad_corr_low \
  lightning.trainer.accumulate_grad_batches=8 \
  lightning.trainer.gradient_clip_val=1.0 \
  model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.callbacks.image_logger.params.batch_frequency=625 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk.yaml"
  <<'COMMENT'
@@ -86,7 +88,7 @@ submit_job "uk_grad_corr_med" "-n uk_grad_corr_med \
  lightning.trainer.accumulate_grad_batches=8 \
  lightning.trainer.gradient_clip_val=1.0 \
  model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.callbacks.image_logger.params.batch_frequency=625 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk.yaml"
 
@@ -97,7 +99,7 @@ submit_job "uk_grad_corr_high" "-n uk_grad_corr_high \
  lightning.trainer.accumulate_grad_batches=8 \
  lightning.trainer.gradient_clip_val=1.0 \
  model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.callbacks.image_logger.params.batch_frequency=625 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk.yaml"
 COMMENT
@@ -116,7 +118,7 @@ submit_job "uk_pinns_baseline" "-n uk_pinns_baseline \
  lightning.trainer.gradient_clip_val=1.0 \
  lightning.trainer.precision=32 \
  model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.callbacks.image_logger.params.batch_frequency=625 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
 
@@ -136,7 +138,7 @@ submit_job "uk_pinns_bc_heavy" "-n uk_pinns_bc_heavy \
  lightning.trainer.gradient_clip_val=1.0 \
  lightning.trainer.precision=32 \
  model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.callbacks.image_logger.params.batch_frequency=625 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
 
@@ -150,7 +152,7 @@ submit_job "uk_physics_hybrid" "-n uk_physics_hybrid \
  lightning.trainer.gradient_clip_val=1.0 \
  lightning.trainer.precision=32 \
  model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=10000 \
+ lightning.callbacks.image_logger.params.batch_frequency=625 \
  lightning.modelcheckpoint.params.save_top_k=1 \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
 COMMENT
@@ -163,7 +165,7 @@ COMMENT
 #  lightning.trainer.accumulate_grad_batches=8 \
 #  lightning.trainer.gradient_clip_val=1.0 \
 #  model.params.original_elbo_weight=5.0e-6 \
-#  lightning.callbacks.image_logger.params.batch_frequency=10000 \
+#  lightning.callbacks.image_logger.params.batch_frequency=625 \
 #  lightning.modelcheckpoint.params.save_top_k=1 \
 #  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_did.yaml"
 
@@ -177,6 +179,6 @@ COMMENT
 #  lightning.trainer.gradient_clip_val=1.0 \
 #  lightning.trainer.precision=32 \
 #  model.params.original_elbo_weight=5.0e-6 \
-#  lightning.callbacks.image_logger.params.batch_frequency=10000 \
+#  lightning.callbacks.image_logger.params.batch_frequency=625 \
 #  lightning.modelcheckpoint.params.save_top_k=1 \
 #  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer_did.yaml"

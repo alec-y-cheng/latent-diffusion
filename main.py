@@ -261,14 +261,26 @@ class CSVEpochLogger(Callback):
 
         keys = sorted(list(row_dict.keys()))
         
-        # Write to csv
-        file_exists = os.path.isfile(self.csv_path)
-        with open(self.csv_path, mode='a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=keys)
-            if not file_exists or not self.header_written:
-                writer.writeheader()
-                self.header_written = True
-            writer.writerow(row_dict)
+        # Write to csv cleanly using pandas to handle dynamic columns
+        import pandas as pd
+        if os.path.isfile(self.csv_path):
+            try:
+                # Need to use on_bad_lines='skip' or similar, but since the header is short
+                # we just try reading. If it crashes, we start fresh.
+                df = pd.read_csv(self.csv_path)
+                new_row_df = pd.DataFrame([row_dict])
+                df = pd.concat([df, new_row_df], ignore_index=True)
+                df.to_csv(self.csv_path, index=False)
+            except Exception as e:
+                # Rename the corrupted file to save it, then start fresh
+                corrupted_path = self.csv_path.replace(".csv", "_corrupted.csv")
+                os.rename(self.csv_path, corrupted_path)
+                print(f"Warning: CSVLogger found corrupted file. Renamed to {corrupted_path}. Starting fresh.")
+                df = pd.DataFrame([row_dict])
+                df.to_csv(self.csv_path, index=False)
+        else:
+            df = pd.DataFrame([row_dict])
+            df.to_csv(self.csv_path, index=False)
 
 class SetupCallback(Callback):
     def __init__(self, resume, now, logdir, ckptdir, cfgdir, config, lightning_config):
@@ -343,15 +355,21 @@ class ImageLogger(Callback):
     def _testtube(self, pl_module, images, batch_idx, split):
         for k in images:
             img = images[k]
+            if img.ndim == 3:
+                img = img.unsqueeze(1)
+                
+            nrow = 8
             if img.shape[1] == 2:
                 # Pad C=2 to C=3 with zeros so add_image/make_grid works intuitively
                 padding = torch.zeros((img.shape[0], 1, img.shape[2], img.shape[3]), device=img.device)
                 img = torch.cat([img, padding], dim=1)
             elif img.shape[1] > 3:
-                # Truncate to 3 channels for visualization to avoid Alpha channel interpretation
-                img = img[:, :3]
+                # Unstack the channels so each target variable gets its own subplot
+                B, C, H, W = img.shape
+                img = img.reshape(B * C, 1, H, W).repeat(1, 3, 1, 1)
+                nrow = C
                 
-            grid = torchvision.utils.make_grid(img)
+            grid = torchvision.utils.make_grid(img, nrow=nrow)
             grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
 
             tag = f"{split}/{k}"
@@ -365,15 +383,21 @@ class ImageLogger(Callback):
         root = os.path.join(save_dir, "images", split)
         for k in images:
             img = images[k]
+            if img.ndim == 3:
+                img = img.unsqueeze(1)
+            
+            nrow = 4
             if img.shape[1] == 2:
                 # Pad to 3 channels (RGB) for PNG saving
                 padding = torch.zeros((img.shape[0], 1, img.shape[2], img.shape[3]), device=img.device)
                 img = torch.cat([img, padding], dim=1)
             elif img.shape[1] > 3:
-                # Truncate to 3 channels for visualization to avoid Alpha channel interpretation
-                img = img[:, :3]
+                # Unstack the channels so each target variable gets its own subplot
+                B, C, H, W = img.shape
+                img = img.reshape(B * C, 1, H, W).repeat(1, 3, 1, 1)
+                nrow = C
             
-            grid = torchvision.utils.make_grid(img, nrow=4)
+            grid = torchvision.utils.make_grid(img, nrow=nrow)
             if self.rescale:
                 grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
             

@@ -161,18 +161,14 @@ def plot_domain_panel(ax, x_input, ch_x, ch_y, target_W=None, target_H=None):
     ax.set_xticks([]); ax.set_yticks([])
     for sp in ax.spines.values(): sp.set_visible(False)
 
-def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
+def save_standardized_plot(y_true, y_pred, save_path, input_cond=None, c_name=""):
     if y_true.ndim > 2: y_true = y_true.squeeze()
     if y_pred.ndim > 2: y_pred = y_pred.squeeze()
     
     H, W = y_true.shape
     diff = y_pred - y_true
     
-    # Shared limits (Hardcoded per WindTransformer_windowed reference)
-    vmin = 0.0
-    vmax = 2.0
-    
-    # --- Domain Masking (Circular) ---
+    # --- Circular domain mask ---
     center_y, center_x = H // 2, W // 2
     radius = min(H, W) // 2 - 5
     Y_coords, X_coords = np.ogrid[:H, :W]
@@ -180,21 +176,45 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     domain_mask = dist < radius
     outside = ~domain_mask
     
+    # --- Semantic masking (Floor vs Roof) ---
+    hide = outside
+    draw_contour = True
+    if input_cond is not None and input_cond.shape[0] >= 5:
+        if input_cond.shape[0] == 15:
+            bldg_mask = input_cond[0] <= 0
+        else:
+            bldg_mask = input_cond[4] > 0
+            
+        if bldg_mask.shape != (H, W):
+            # Resize mask to match target image resolution (e.g. 504 -> 512)
+            tmp = torch.from_numpy(bldg_mask.astype(np.float32)).unsqueeze(0).unsqueeze(0)
+            bldg_mask = torch.nn.functional.interpolate(tmp, size=(H, W), mode='nearest').squeeze().numpy() > 0.5
+            
+        open_gnd_mask = ~bldg_mask
+        
+        if "Floor" in c_name:
+            hide = outside | bldg_mask
+            draw_contour = True
+        elif "Roof" in c_name:
+            hide = outside | open_gnd_mask
+            draw_contour = False
+
     # Force non-negative physics for visualization
     y_pred = np.maximum(y_pred, 0)
     
-    y_true_vis = np.ma.masked_where(outside, y_true)
-    y_pred_vis = np.ma.masked_where(outside, y_pred)
-    diff_vis = np.ma.masked_where(outside, diff)
+    y_true_vis = np.ma.masked_where(hide, y_true)
+    y_pred_vis = np.ma.masked_where(hide, y_pred)
+    diff_vis = np.ma.masked_where(hide, diff)
     
     # --- Metrics ---
-    diff_masked = diff[domain_mask]
+    valid_mask = ~hide
+    diff_masked = diff[valid_mask]
     abs_diff_masked = np.abs(diff_masked)
     
-    mae = np.mean(abs_diff_masked)
-    rmse = np.sqrt(np.mean(diff_masked**2))
+    mae = np.mean(abs_diff_masked) if len(diff_masked) > 0 else 0.0
+    rmse = np.sqrt(np.mean(diff_masked**2)) if len(diff_masked) > 0 else 0.0
     
-    gt_masked = y_true[domain_mask]
+    gt_masked = y_true[valid_mask]
     gt_abs = np.abs(gt_masked)
     valid_for_mape = gt_abs > 0.1
     if np.any(valid_for_mape):
@@ -208,12 +228,16 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     else:
         ssim_val = -1.0
         
-    grad_corr = compute_gradient_correlation(y_pred, y_true, domain_mask)
+    grad_corr = compute_gradient_correlation(y_pred, y_true, valid_mask)
     
-    # R² (coefficient of determination) within circular domain
+    # R² (coefficient of determination) within valid domain
     ss_res = np.sum(diff_masked ** 2)
-    ss_tot = np.sum((gt_masked - np.mean(gt_masked)) ** 2)
+    ss_tot = np.sum((gt_masked - np.mean(gt_masked)) ** 2) if len(gt_masked) > 0 else 0.0
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    
+    # Dynamic scale based on the channel
+    vmin = 0.0
+    vmax = 2.0 if "Speed" in c_name else 0.5
     
     # --- Plotting ---
     fig = plt.figure(figsize=(24, 6))
@@ -241,9 +265,13 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     ax1.set_title("Ground Truth", pad=36, fontsize=15, fontweight="bold",
                    bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
     im1 = ax1.imshow(y_true_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
-    if input_cond is not None and input_cond.shape[0] > 0:
+    if draw_contour and input_cond is not None and input_cond.shape[0] > 0:
         # Solid black buildings per request
-        ax1.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+        if input_cond.shape[0] == 15:
+            bldg_vis = input_cond[0] <= 0
+        else:
+            bldg_vis = input_cond[4] > 0
+        ax1.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
     ax1.set_xticks([]); ax1.set_yticks([])
     for spine in ax1.spines.values(): spine.set_visible(False)
 
@@ -252,9 +280,13 @@ def save_standardized_plot(y_true, y_pred, save_path, input_cond=None):
     ax2.set_title("Prediction", pad=36, fontsize=15, fontweight="bold",
                    bbox=dict(boxstyle="round,pad=0.3", facecolor="whitesmoke", edgecolor="gray", alpha=0.9))
     im2 = ax2.imshow(y_pred_vis, cmap='viridis', vmin=vmin, vmax=vmax, interpolation='nearest', origin='lower')
-    if input_cond is not None and input_cond.shape[0] > 0:
+    if draw_contour and input_cond is not None and input_cond.shape[0] > 0:
         # Solid black buildings per request
-        ax2.contour(input_cond[0] <= 0, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
+        if input_cond.shape[0] == 15:
+            bldg_vis = input_cond[0] <= 0
+        else:
+            bldg_vis = input_cond[4] > 0
+        ax2.contour(bldg_vis, levels=[0.5], colors='white', linewidths=0.5, origin='lower', extent=[0, W, 0, H])
     ax2.set_xticks([]); ax2.set_yticks([])
     for spine in ax2.spines.values(): spine.set_visible(False)
 
@@ -404,37 +436,49 @@ def main():
         inference_time = t1 - t0
             
         # Post-process (Single Sample)
-        pred_np = x_samples.cpu().numpy()[0, 0] # (H, W) or (C, H, W)? Assuming single channel target
-        gt_np = x_gt.cpu().numpy()[0, 0]
+        pred_np_all = x_samples.cpu().numpy()[0] # (C, H, W)
+        gt_np_all = x_gt.cpu().numpy()[0]
         
         # Un-normalize from LDM [-1, 1] range to [0, 2] per WindTransformer reference
-        pred_np = pred_np + 1.0
-        gt_np = gt_np + 1.0
+        pred_np_all = pred_np_all + 1.0
+        gt_np_all = gt_np_all + 1.0
         
-        # Visualization Input (Conditioning)
-        save_path = os.path.join(args.outdir, f"test_sample_{i:03d}_idx_{idx}.png")
+        channel_names = ["Floor_Speed", "Floor_Turb", "Roof_Speed", "Roof_Turb"]
         
-        # Now we completely defer the plot to the function which also computes metrics
-        plot_metrics = save_standardized_plot(gt_np, pred_np, save_path, input_cond=cond.cpu().numpy()[0])
-        
-        # Collect metrics for aggregation
-        metrics = {
-            "mae": plot_metrics['mae'],
-            "rmse": plot_metrics['rmse'],
-            "r2": plot_metrics['r2'],
-            "mape": plot_metrics['mape'],
-            "ssim": plot_metrics['ssim'],
-            "grad_corr": plot_metrics['grad_corr'],
-            "inference_time": inference_time
-        }
-        all_metrics.append(metrics)
+        for c in range(pred_np_all.shape[0]):
+            pred_np = pred_np_all[c]
+            gt_np = gt_np_all[c]
+            
+            c_name = channel_names[c] if c < len(channel_names) else f"Ch_{c}"
+            save_path = os.path.join(args.outdir, f"test_sample_{i:03d}_idx_{idx}_{c_name}.png")
+            
+            # Now we completely defer the plot to the function which also computes metrics
+            plot_metrics = save_standardized_plot(gt_np, pred_np, save_path, input_cond=cond.cpu().numpy()[0], c_name=c_name)
+            
+            # Collect metrics for aggregation
+            metrics = {
+                "mae": plot_metrics['mae'],
+                "rmse": plot_metrics['rmse'],
+                "r2": plot_metrics['r2'],
+                "mape": plot_metrics['mape'],
+                "ssim": plot_metrics['ssim'],
+                "grad_corr": plot_metrics['grad_corr'],
+                "inference_time": inference_time,
+                "channel": c_name,
+                "sample_idx": idx
+            }
+            all_metrics.append(metrics)
         
     print(f"Done. Results saved to {args.outdir}")
     
     # 5. Save Aggregate Metrics
     if all_metrics:
         df_metrics = pd.DataFrame(all_metrics)
-        summary = df_metrics.agg(['mean', 'std'])
+        if "channel" in df_metrics.columns:
+            summary = df_metrics.groupby("channel").agg(['mean', 'std'])
+        else:
+            summary = df_metrics.agg(['mean', 'std'])
+            
         print("\n--- Aggregate Metrics ---")
         print(summary)
         
@@ -444,7 +488,6 @@ def main():
         
         # Save individual metrics too
         all_metrics_path = os.path.join(args.outdir, "all_metrics.csv")
-        df_metrics.insert(0, 'idx', indices) # Add index column
         df_metrics.to_csv(all_metrics_path, index=False)
 
 if __name__ == "__main__":
