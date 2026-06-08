@@ -9,7 +9,7 @@ sys.path.append(os.getcwd())
 from ldm.data.cfd_data import CFDTrain
 
 def test_loading():
-    h5_path = "data/uk_set/dataset_uk.h5"
+    h5_path = "data/uk_roof_dataset.h5"
     if not os.path.exists(h5_path):
         print(f"ERROR: {h5_path} not found.")
         return

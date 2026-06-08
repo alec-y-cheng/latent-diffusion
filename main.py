@@ -22,6 +22,11 @@ from pytorch_lightning.utilities import rank_zero_info
 from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config
 
+try:
+    torch.multiprocessing.set_sharing_strategy("file_system")
+except RuntimeError:
+    pass
+
 
 def get_parser(**parser_kwargs):
     def str2bool(v):
@@ -240,10 +245,37 @@ class DataModuleFromConfig(pl.LightningDataModule):
 
 
 class CSVEpochLogger(Callback):
-    def __init__(self):
+    def __init__(self, compact=True):
         super().__init__()
         self.csv_path = None
         self.header_written = False
+        self.compact = compact
+        self.keep_exact = {"epoch", "step", "train/loss", "val/loss"}
+        self.keep_substrings = (
+            "loss_simple",
+            "loss_grad_corr",
+            "loss_pinn",
+            "pixel_mae",
+            "pixel_rmse",
+            "pixel_grad_corr",
+        )
+        self.drop_substrings = (
+            "_ema",
+            "loss_vlb",
+            "loss_gamma",
+            "logvar",
+            "global_step",
+            "lr_abs",
+        )
+
+    def _keep_metric_key(self, key):
+        if not self.compact:
+            return True
+        if key in self.keep_exact:
+            return True
+        if any(drop in key for drop in self.drop_substrings):
+            return False
+        return any(keep in key for keep in self.keep_substrings)
 
     def on_validation_epoch_end(self, trainer, pl_module):
         # We write on val epoch end because it usually happens right after train epoch end
@@ -254,6 +286,8 @@ class CSVEpochLogger(Callback):
         # Flatten and extract scalar values from tensors
         row_dict = {"epoch": trainer.current_epoch, "step": trainer.global_step}
         for k, v in metrics.items():
+            if not self._keep_metric_key(k):
+                continue
             if isinstance(v, torch.Tensor) and v.numel() == 1:
                 row_dict[k] = v.item()
             elif isinstance(v, (int, float)):
@@ -268,6 +302,9 @@ class CSVEpochLogger(Callback):
                 # Need to use on_bad_lines='skip' or similar, but since the header is short
                 # we just try reading. If it crashes, we start fresh.
                 df = pd.read_csv(self.csv_path)
+                if self.compact:
+                    keep_cols = [c for c in df.columns if self._keep_metric_key(c)]
+                    df = df[keep_cols]
                 new_row_df = pd.DataFrame([row_dict])
                 df = pd.concat([df, new_row_df], ignore_index=True)
                 df.to_csv(self.csv_path, index=False)
@@ -334,11 +371,15 @@ class SetupCallback(Callback):
 class ImageLogger(Callback):
     def __init__(self, batch_frequency, max_images, clamp=True, increase_log_steps=True,
                  rescale=True, disabled=False, log_on_batch_idx=False, log_first_step=False,
+                 val_batch_frequency=0, max_val_images=None, log_first_val_batch=True,
                  log_images_kwargs=None):
         super().__init__()
         self.rescale = rescale
         self.batch_freq = batch_frequency
         self.max_images = max_images
+        self.max_val_images = max_images if max_val_images is None else max_val_images
+        self.val_batch_freq = val_batch_frequency
+        self.log_first_val_batch = log_first_val_batch
         self.logger_log_images = {
             pl.loggers.TestTubeLogger: self._testtube,
         }
@@ -418,19 +459,21 @@ class ImageLogger(Callback):
             Image.fromarray(grid).save(path)
 
     def log_img(self, pl_module, batch, batch_idx, split="train"):
-        check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
-        
         is_val = (split == "val")
-        should_log = self.check_frequency(check_idx)
-        
-        # Always log the first batch of validation
-        if is_val and batch_idx == 0:
-            should_log = True
+        max_images = self.max_val_images if is_val else self.max_images
+
+        if is_val:
+            should_log = self.log_first_val_batch and batch_idx == 0
+            if self.val_batch_freq and self.val_batch_freq > 0 and batch_idx > 0:
+                should_log = should_log or batch_idx % self.val_batch_freq == 0
+        else:
+            check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
+            should_log = self.check_frequency(check_idx)
             
         if (should_log and
                 hasattr(pl_module, "log_images") and
                 callable(pl_module.log_images) and
-                self.max_images > 0):
+                max_images > 0):
             logger = type(pl_module.logger)
 
             is_train = pl_module.training
@@ -441,7 +484,7 @@ class ImageLogger(Callback):
                 images = pl_module.log_images(batch, split=split, **self.log_images_kwargs)
 
             for k in images:
-                N = min(images[k].shape[0], self.max_images)
+                N = min(images[k].shape[0], max_images)
                 images[k] = images[k][:N]
                 if isinstance(images[k], torch.Tensor):
                     images[k] = images[k].detach().cpu()
@@ -460,19 +503,16 @@ class ImageLogger(Callback):
     def check_frequency(self, check_idx):
         if ((check_idx % self.batch_freq) == 0 or (check_idx in self.log_steps)) and (
                 check_idx > 0 or self.log_first_step):
-            try:
+            if self.log_steps:
                 self.log_steps.pop(0)
-            except IndexError as e:
-                print(e)
-                pass
             return True
         return False
 
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
             self.log_img(pl_module, batch, batch_idx, split="train")
 
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         if not self.disabled and pl_module.global_step > 0:
             self.log_img(pl_module, batch, batch_idx, split="val")
         if hasattr(pl_module, 'calibrate_grad_norm'):
@@ -488,7 +528,7 @@ class CUDACallback(Callback):
         torch.cuda.synchronize(trainer.root_gpu)
         self.start_time = time.time()
 
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
+    def on_train_epoch_end(self, trainer, pl_module, outputs=None):
         torch.cuda.synchronize(trainer.root_gpu)
         max_memory = torch.cuda.max_memory_allocated(trainer.root_gpu) / 2 ** 20
         epoch_time = time.time() - self.start_time

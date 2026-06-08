@@ -1,30 +1,39 @@
 #!/bin/bash
 #SBATCH --job-name=ldm_uk
-#SBATCH --partition=coe-gpu
-#SBATCH --qos=coe-ice
-#SBATCH --gres=gpu:H200:1
-#SBATCH --cpus-per-task=16
+##SBATCH --partition=coe-gpu
+##SBATCH --qos=coe-ice
+##SBATCH --gres=gpu:H200:1
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=256G
-#SBATCH --time=012:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/train_%j.out
 
+#SBATCH --account=gts-pkastner3
+#SBATCH --qos=inferno
+#SBATCH --partition=gpu-h200
+#SBATCH --gres=gpu:h200:1
+
+set -euo pipefail
+
+PROJECT_ROOT="${SLURM_SUBMIT_DIR:-}"
+if [[ -z "$PROJECT_ROOT" || ! -f "$PROJECT_ROOT/main.py" ]]; then
+  PROJECT_ROOT="/storage/scratch1/7/acheng324/latent-diffusion"
+fi
+cd "$PROJECT_ROOT"
+
 module load cuda/11.8
-source $HOME/.bashrc
-conda activate ldm
+source "$PROJECT_ROOT/scripts/slurm_env.sh"
+activate_ldm_env
 
 export CUDA_VISIBLE_DEVICES=0
 
 # UK dataset is a single HDF5 file — copy it to local NVMe for fast IO
-DATA_FILE=${DATA_FILE:-data/uk_set/dataset_uk.h5}
-
-echo "Copying UK dataset to local NVMe ($TMPDIR)..."
-mkdir -p $TMPDIR/$(dirname $DATA_FILE)
-cp $DATA_FILE $TMPDIR/$DATA_FILE
-echo "Copy complete. Size: $(du -h $TMPDIR/$DATA_FILE | cut -f1)"
+DATA_FILE=${DATA_FILE:-data/uk_roof_dataset.h5}
+stage_file_to_tmp "$DATA_FILE"
 
 python main.py \
   -t \
   --gpus 0, \
-  $EXTRA_ARGS \
-  data.params.train.params.data_path=$TMPDIR/$DATA_FILE \
-  data.params.validation.params.data_path=$TMPDIR/$DATA_FILE
+  ${EXTRA_ARGS:-} \
+  data.params.train.params.data_path="$STAGED_DATA_FILE" \
+  data.params.validation.params.data_path="$STAGED_DATA_FILE"

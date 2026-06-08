@@ -8,6 +8,7 @@ https://github.com/CompVis/taming-transformers
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import pytorch_lightning as pl
 from torch.optim.lr_scheduler import LambdaLR
@@ -31,6 +32,13 @@ from ldm.models.diffusion.ddim import DDIMSampler
 __conditioning_keys__ = {'concat': 'c_concat',
                          'crossattn': 'c_crossattn',
                          'adm': 'y'}
+
+CFD_TARGET_NAMES = [
+    "floor_speed",
+    "floor_turbulence",
+    "roof_speed",
+    "roof_turbulence",
+]
 
 
 def disabled_train(self, mode=True):
@@ -437,10 +445,22 @@ class LatentDiffusion(DDPM):
                  scale_factor=1.0,
                  scale_by_std=False,
                  grad_corr_weight=0.0,
+                 grad_corr_per_channel=False,
+                 grad_corr_masked=False,
                  use_pinn_loss=False,
                  pinn_loss_weight=1.0,
                  lambda_res=1.0,
                  lambda_bc=1.0,
+                 lambda_smooth=0.25,
+                 lambda_range=0.05,
+                 lambda_masked_recon=0.0,
+                 lambda_roof_background=0.0,
+                 lambda_floor_background=0.0,
+                 turbulence_smooth_weight=1.0,
+                 roof_smooth_weight=1.0,
+                 pinn_sdf_channel=0,
+                 pinn_building_channel=1,
+                 pinn_building_mask_sharpness=20.0,
                  l_simple_weight=1.0,
                  *args, **kwargs):
         kwargs['l_simple_weight'] = l_simple_weight
@@ -457,9 +477,15 @@ class LatentDiffusion(DDPM):
         super().__init__(conditioning_key=conditioning_key, *args, **kwargs)
         
         self.grad_corr_weight = grad_corr_weight
+        self.grad_corr_per_channel = grad_corr_per_channel
+        self.grad_corr_masked = grad_corr_masked
         if self.grad_corr_weight > 0:
-            print(f"LatentDiffusion: Enabled GradCorrLoss with weight {self.grad_corr_weight}")
-            self.grad_corr_loss = GradCorrLoss()
+            print(
+                "LatentDiffusion: Enabled GradCorrLoss "
+                f"(weight={self.grad_corr_weight}, per_channel={self.grad_corr_per_channel}, "
+                f"masked={self.grad_corr_masked})"
+            )
+            self.grad_corr_loss = GradCorrLoss(per_channel=self.grad_corr_per_channel)
 
         self.use_pinn_loss = use_pinn_loss
         self.pinn_loss_weight = pinn_loss_weight
@@ -467,10 +493,38 @@ class LatentDiffusion(DDPM):
         # Expose internal physics weights for easy omega-conf overriding
         self.lambda_res = lambda_res
         self.lambda_bc = lambda_bc
+        self.lambda_smooth = lambda_smooth
+        self.lambda_range = lambda_range
+        self.lambda_masked_recon = lambda_masked_recon
+        self.lambda_roof_background = lambda_roof_background
+        self.lambda_floor_background = lambda_floor_background
+        self.turbulence_smooth_weight = turbulence_smooth_weight
+        self.roof_smooth_weight = roof_smooth_weight
+        self.pinn_sdf_channel = pinn_sdf_channel
+        self.pinn_building_channel = pinn_building_channel
+        self.pinn_building_mask_sharpness = pinn_building_mask_sharpness
         
         if self.use_pinn_loss:
-            print(f"LatentDiffusion: Enabled PINNSLoss physics training (Weight: {self.pinn_loss_weight}, Res: {self.lambda_res}, BC: {self.lambda_bc})")
-            self.pinn_loss_fn = PINNSLoss(lambda_res=self.lambda_res, lambda_bc=self.lambda_bc)
+            print(
+                "LatentDiffusion: Enabled PINNSLoss physics training "
+                f"(Weight: {self.pinn_loss_weight}, Res: {self.lambda_res}, "
+                f"BC: {self.lambda_bc}, Smooth: {self.lambda_smooth}, "
+                f"Range: {self.lambda_range})"
+            )
+            self.pinn_loss_fn = PINNSLoss(
+                lambda_res=self.lambda_res,
+                lambda_bc=self.lambda_bc,
+                lambda_smooth=self.lambda_smooth,
+                lambda_range=self.lambda_range,
+                lambda_masked_recon=self.lambda_masked_recon,
+                lambda_roof_background=self.lambda_roof_background,
+                lambda_floor_background=self.lambda_floor_background,
+                turbulence_smooth_weight=self.turbulence_smooth_weight,
+                roof_smooth_weight=self.roof_smooth_weight,
+                sdf_channel=self.pinn_sdf_channel,
+                building_channel=self.pinn_building_channel,
+                building_mask_sharpness=self.pinn_building_mask_sharpness,
+            )
             
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
@@ -908,6 +962,107 @@ class LatentDiffusion(DDPM):
         else:
             return self.p_losses(x, c, t, *args, **kwargs)
 
+    @staticmethod
+    def _gradient_correlation_per_channel(pred, target, eps=1e-8):
+        pred_dx = torch.cat([torch.zeros_like(pred[..., :1]), pred[..., 1:] - pred[..., :-1]], dim=-1)
+        true_dx = torch.cat([torch.zeros_like(target[..., :1]), target[..., 1:] - target[..., :-1]], dim=-1)
+        pred_dy = torch.cat([torch.zeros_like(pred[..., :1, :]), pred[..., 1:, :] - pred[..., :-1, :]], dim=-2)
+        true_dy = torch.cat([torch.zeros_like(target[..., :1, :]), target[..., 1:, :] - target[..., :-1, :]], dim=-2)
+
+        pred_grad = torch.cat([pred_dx.flatten(2), pred_dy.flatten(2)], dim=2)
+        true_grad = torch.cat([true_dx.flatten(2), true_dy.flatten(2)], dim=2)
+        pred_grad = pred_grad - pred_grad.mean(dim=2, keepdim=True)
+        true_grad = true_grad - true_grad.mean(dim=2, keepdim=True)
+
+        numerator = (pred_grad * true_grad).sum(dim=2)
+        denominator = torch.sqrt((pred_grad.pow(2).sum(dim=2) * true_grad.pow(2).sum(dim=2)).clamp_min(eps))
+        corr = numerator / denominator
+        corr = torch.where(torch.isfinite(corr), corr, torch.zeros_like(corr))
+        return corr.mean(dim=0)
+
+    @staticmethod
+    def _extract_condition_tensor(cond):
+        if isinstance(cond, dict) and 'c_concat' in cond:
+            return cond['c_concat'][0]
+        if isinstance(cond, dict) and 'c_crossattn' in cond:
+            return cond['c_crossattn'][0]
+        return cond
+
+    def _target_masks_from_condition(self, cond, height, width, channels):
+        cond = LatentDiffusion._extract_condition_tensor(cond)
+        if cond is None or cond.ndim != 4 or cond.shape[1] <= 1:
+            return None
+        if cond.shape[-1] <= 16 and cond.shape[1] > 16:
+            cond = cond.permute(0, 3, 1, 2)
+
+        building_channel = getattr(self, "pinn_building_channel", 1)
+        if cond.shape[1] <= building_channel:
+            return None
+        building = cond[:, building_channel:building_channel + 1]
+        if building.shape[-2:] != (height, width):
+            building = F.interpolate(
+                building, size=(height, width), mode="bilinear", align_corners=False
+            )
+        sharpness = getattr(self, "pinn_building_mask_sharpness", 20.0)
+        solid = torch.sigmoid((building + 0.95) * sharpness)
+        fluid = (1.0 - solid).clamp(0.0, 1.0)
+
+        if channels == 4:
+            return torch.cat([fluid, fluid, solid, solid], dim=1)
+        return torch.ones(
+            solid.shape[0], channels, height, width,
+            device=solid.device, dtype=solid.dtype
+        )
+
+    def _add_pixel_metrics(self, loss_dict, prefix, pred, target):
+        err = pred - target
+        mae_ch = err.abs().mean(dim=(0, 2, 3))
+        rmse_ch = torch.sqrt(err.pow(2).mean(dim=(0, 2, 3)).clamp_min(1e-12))
+        grad_corr_ch = self._gradient_correlation_per_channel(pred, target)
+
+        loss_dict[f"{prefix}/pixel_mae"] = mae_ch.mean()
+        loss_dict[f"{prefix}/pixel_rmse"] = rmse_ch.mean()
+        loss_dict[f"{prefix}/pixel_grad_corr"] = grad_corr_ch.mean()
+
+        for ch in range(pred.shape[1]):
+            name = CFD_TARGET_NAMES[ch] if ch < len(CFD_TARGET_NAMES) else f"ch{ch}"
+            loss_dict[f"{prefix}/pixel_mae_{name}"] = mae_ch[ch]
+            loss_dict[f"{prefix}/pixel_rmse_{name}"] = rmse_ch[ch]
+            loss_dict[f"{prefix}/pixel_grad_corr_{name}"] = grad_corr_ch[ch]
+
+    @staticmethod
+    def _heatmap_viridis_like(x):
+        x = x.clamp(0., 1.)
+        r = (1.6 * x - 0.25).clamp(0., 1.)
+        g = (1.0 - torch.abs(2.0 * x - 1.0)).clamp(0., 1.)
+        b = (1.25 - 1.5 * x).clamp(0., 1.)
+        return torch.stack([r, g, b], dim=1)
+
+    @staticmethod
+    def _heatmap_diverging(diff):
+        x = diff.clamp(-1., 1.)
+        r = torch.where(x > 0, 1.0, 1.0 + x).clamp(0., 1.)
+        g = (1.0 - x.abs()).clamp(0., 1.)
+        b = torch.where(x < 0, 1.0, 1.0 - x).clamp(0., 1.)
+        return torch.stack([r, g, b], dim=1)
+
+    def _make_validation_comparison(self, target, pred, max_items=2):
+        target = target[:max_items].detach()
+        pred = pred[:max_items].detach()
+        panels = []
+        for b in range(target.shape[0]):
+            for ch in range(target.shape[1]):
+                true_ch = target[b:b + 1, ch]
+                pred_ch = pred[b:b + 1, ch]
+                shared_min = torch.minimum(true_ch.amin(), pred_ch.amin())
+                shared_max = torch.maximum(true_ch.amax(), pred_ch.amax())
+                denom = (shared_max - shared_min).clamp_min(1e-6)
+                true_rgb = self._heatmap_viridis_like((true_ch - shared_min) / denom)
+                pred_rgb = self._heatmap_viridis_like((pred_ch - shared_min) / denom)
+                diff_rgb = self._heatmap_diverging((pred_ch - true_ch) / denom)
+                panels.append(torch.cat([true_rgb, pred_rgb, diff_rgb], dim=-1))
+        return torch.cat(panels, dim=0) * 2.0 - 1.0
+
     def _rescale_annotations(self, bboxes, crop_coordinates):  # TODO: move to dataset
         def rescale_bbox(bbox):
             x0 = clamp((bbox[0] - crop_coordinates[0]) / crop_coordinates[2])
@@ -1071,8 +1226,13 @@ class LatentDiffusion(DDPM):
         loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
         loss += (self.original_elbo_weight * loss_vlb)
         
+        x_recon = None
+        x_recon_pixel = None
+        x_start_pixel = None
+        needs_pixel_metrics = prefix == "val"
+
         # --- GradCorr Loss Integration ---
-        if self.grad_corr_weight > 0:
+        if self.grad_corr_weight > 0 or needs_pixel_metrics:
             # 1. Reconstruct x0 (latent)
             if self.parameterization == "eps":
                 x_recon = self.predict_start_from_noise(x_noisy, t=t, noise=model_output)
@@ -1083,15 +1243,28 @@ class LatentDiffusion(DDPM):
             
             if x_recon is not None:
                 # 2. Decode to Pixel Space
-                x_recon_pixel = self.differentiable_decode_first_stage(x_recon)
+                if self.grad_corr_weight > 0 and self.training:
+                    x_recon_pixel = self.differentiable_decode_first_stage(x_recon)
+                else:
+                    x_recon_pixel = self.decode_first_stage(x_recon)
                 x_start_pixel = self.decode_first_stage(x_start) # Does not require gradients
                 
                 # 3. Compute Loss
-                gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel)
-                
-                loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
-                
-                loss = loss + self.grad_corr_weight * gc_loss
+                if self.grad_corr_weight > 0:
+                    gc_mask = None
+                    if self.grad_corr_masked:
+                        gc_mask = self._target_masks_from_condition(
+                            cond,
+                            x_recon_pixel.shape[-2],
+                            x_recon_pixel.shape[-1],
+                            x_recon_pixel.shape[1],
+                        )
+                    gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel, mask=gc_mask)
+                    loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
+                    loss = loss + self.grad_corr_weight * gc_loss
+
+                if needs_pixel_metrics:
+                    self._add_pixel_metrics(loss_dict, prefix, x_recon_pixel, x_start_pixel)
 
         loss_dict.update({f'{prefix}/loss': loss})
 
@@ -1142,12 +1315,7 @@ class LatentDiffusion(DDPM):
             x_start_pixel = self.decode_first_stage(x_start) # Does not require gradients
             
             # Extract Condition
-            if isinstance(cond, dict) and 'c_concat' in cond:
-                cond_tensor = cond['c_concat'][0]
-            elif isinstance(cond, dict) and 'c_crossattn' in cond:
-                cond_tensor = cond['c_crossattn'][0]
-            else:
-                cond_tensor = cond
+            cond_tensor = self._extract_condition_tensor(cond)
                 
             pinn_total, pinn_dict = self.pinn_loss_fn(x_recon_pixel, x_start_pixel, cond_tensor)
             
@@ -1156,9 +1324,20 @@ class LatentDiffusion(DDPM):
             
             loss = loss + (self.pinn_loss_weight * pinn_total)
 
+            if prefix == "val":
+                self._add_pixel_metrics(loss_dict, prefix, x_recon_pixel, x_start_pixel)
+
         # Retain GradCorr if enabled
         if self.grad_corr_weight > 0 and x_recon is not None:
-            gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel)
+            gc_mask = None
+            if self.grad_corr_masked:
+                gc_mask = self._target_masks_from_condition(
+                    cond_tensor,
+                    x_recon_pixel.shape[-2],
+                    x_recon_pixel.shape[-1],
+                    x_recon_pixel.shape[1],
+                )
+            gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel, mask=gc_mask)
             loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
             loss = loss + self.grad_corr_weight * gc_loss
 
@@ -1371,8 +1550,8 @@ class LatentDiffusion(DDPM):
 
     @torch.no_grad()
     def log_images(self, batch, N=8, n_row=4, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,
-                   quantize_denoised=True, inpaint=True, plot_denoise_rows=False, plot_progressive_rows=True,
-                   plot_diffusion_rows=True, **kwargs):
+                   quantize_denoised=True, inpaint=False, plot_denoise_rows=False, plot_progressive_rows=False,
+                   plot_diffusion_rows=False, **kwargs):
 
         use_ddim = ddim_steps is not None
 
@@ -1427,6 +1606,7 @@ class LatentDiffusion(DDPM):
                 # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True)
             x_samples = self.decode_first_stage(samples)
             log["samples"] = x_samples
+            log["comparison_gt_pred_diff"] = self._make_validation_comparison(x[:N], x_samples[:N])
             if plot_denoise_rows:
                 denoise_grid = self._get_denoise_row_from_list(z_denoise_row)
                 log["denoise_row"] = denoise_grid

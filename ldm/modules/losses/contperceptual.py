@@ -68,7 +68,8 @@ class LPIPSWithDiscriminator(nn.Module):
                 inputs_3c = torch.cat([inputs, padding], dim=1)
                 reconstructions_3c = torch.cat([reconstructions, padding], dim=1)
 
-        rec_loss = torch.abs(inputs.contiguous() - reconstructions.contiguous())
+        pixel_rec_loss = torch.abs(inputs.contiguous() - reconstructions.contiguous())
+        rec_loss = pixel_rec_loss
         if self.perceptual_weight > 0:
             p_loss = self.perceptual_loss(inputs_3c.contiguous(), reconstructions_3c.contiguous())
             rec_loss = rec_loss + self.perceptual_weight * p_loss
@@ -112,6 +113,10 @@ class LPIPSWithDiscriminator(nn.Module):
                    "{}/disc_factor".format(split): torch.tensor(disc_factor),
                    "{}/g_loss".format(split): g_loss.detach().mean(),
                    }
+            if pixel_rec_loss.ndim == 4:
+                per_channel_rec_loss = pixel_rec_loss.detach().mean(dim=(0, 2, 3))
+                for channel_idx, channel_loss in enumerate(per_channel_rec_loss):
+                    log[f"{split}/rec_loss_ch{channel_idx}"] = channel_loss
             return loss, log
 
         if optimizer_idx == 1:
@@ -131,4 +136,3 @@ class LPIPSWithDiscriminator(nn.Module):
                    "{}/logits_fake".format(split): logits_fake.detach().mean()
                    }
             return d_loss, log
-

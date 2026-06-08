@@ -1,0 +1,24 @@
+numpy<2
+pandas
+h5py
+pillow
+scipy
+matplotlib
+scikit-image
+tqdm
+opencv-python-headless
+pudb
+imageio
+imageio-ffmpeg
+pytorch-lightning==1.6.5
+torchmetrics==0.9.3
+omegaconf==2.1.1
+test-tube>=0.7.5
+einops==0.3.0
+torch-fidelity==0.3.0
+transformers==4.19.2
+kornia==0.6.4
+ftfy
+regex
+-e ./src/clip
+-e .

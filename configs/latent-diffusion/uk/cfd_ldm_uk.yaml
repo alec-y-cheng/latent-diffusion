@@ -14,7 +14,7 @@ model:
     cond_stage_trainable: false
     concat_mode: true
     monitor: val/loss
-    grad_corr_weight: 0.0
+    grad_corr_weight: 0.02
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:
@@ -38,7 +38,7 @@ model:
       params:
         embed_dim: 4
         monitor: val/rec_loss
-        ckpt_path: logs/2026-04-28T02-29-06_autoencoder_kl_32x32x4_uk/checkpoints/epoch=000097.ckpt
+        ckpt_path: logs/2026-06-02T13-05-15_autoencoder_kl_32x32x4_uk/checkpoints/epoch=000062.ckpt
         ddconfig:
           double_z: true
           z_channels: 4
@@ -68,11 +68,11 @@ data:
     train:
       target: ldm.data.cfd_data.CFDConditionalTrain
       params:
-        data_path: data/uk_set/dataset_uk.h5
+        data_path: data/uk_roof_dataset.h5
     validation:
       target: ldm.data.cfd_data.CFDConditionalValidation
       params:
-        data_path: data/uk_set/dataset_uk.h5
+        data_path: data/uk_roof_dataset.h5
 
 lightning:
   callbacks:

@@ -27,15 +27,16 @@ data:
   target: main.DataModuleFromConfig
   params:
     batch_size: 3
+    num_workers: 2
     wrap: True
     train:
       target: ldm.data.cfd_data.CFDTrain
       params:
-        data_path: data/uk_set/dataset_uk.h5
+        data_path: data/uk_roof_dataset.h5
     validation:
       target: ldm.data.cfd_data.CFDValidation
       params:
-        data_path: data/uk_set/dataset_uk.h5
+        data_path: data/uk_roof_dataset.h5
 
 lightning:
   callbacks:
@@ -44,6 +45,8 @@ lightning:
       params:
         batch_frequency: 3000
         max_images: 8
+        max_val_images: 4
+        val_batch_frequency: 0
         increase_log_steps: True
 
   trainer:

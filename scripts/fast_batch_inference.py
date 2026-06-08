@@ -84,33 +84,62 @@ def get_best_checkpoint(folder):
     
     best = os.path.join(ckpt_dir, "best.ckpt")
     if os.path.exists(best): return best
-    
+
+    ckpts = glob.glob(os.path.join(ckpt_dir, "*.ckpt"))
+    epoch_ckpts = [c for c in ckpts if "epoch=" in os.path.basename(c)]
+    if epoch_ckpts:
+        metrics_path = os.path.join(folder, "epoch_metrics.csv")
+        metric_by_epoch = {}
+        if os.path.exists(metrics_path):
+            try:
+                df = pd.read_csv(metrics_path)
+                metric_col = "val/loss" if "val/loss" in df.columns else None
+                if metric_col is None:
+                    candidates = [c for c in df.columns if c.startswith("val/") and "loss" in c]
+                    metric_col = candidates[0] if candidates else None
+                if metric_col is not None and "epoch" in df.columns:
+                    for _, row in df.dropna(subset=[metric_col]).iterrows():
+                        metric_by_epoch[int(row["epoch"])] = float(row[metric_col])
+            except Exception as exc:
+                print(f"  [Warning] Could not parse {metrics_path}: {exc}")
+
+        if metric_by_epoch:
+            scored = []
+            for ckpt in epoch_ckpts:
+                epoch = get_epoch_from_path(ckpt)
+                if epoch in metric_by_epoch:
+                    scored.append((metric_by_epoch[epoch], epoch, ckpt))
+            if scored:
+                scored.sort(key=lambda item: (item[0], -item[1]))
+                return scored[0][2]
+
+        epoch_ckpts.sort(key=get_epoch_from_path, reverse=True)
+        return epoch_ckpts[0]
+
     last = os.path.join(ckpt_dir, "last.ckpt")
     if os.path.exists(last): return last
-    
-    ckpts = glob.glob(os.path.join(ckpt_dir, "*.ckpt"))
+
     if not ckpts: return None
-    
+
+    ckpts.sort(key=os.path.getmtime, reverse=True)
+    return ckpts[0]
+
+
+def get_epoch_from_path(path):
     # Sort by epoch number manually if possible
     # Expect filenames like "epoch=000055.ckpt"
-    def get_epoch(path):
-        try:
-            name = os.path.basename(path)
-            # Find "epoch="
-            if "epoch=" in name:
-                # Extract number after "epoch=" until next non-digit
-                part = name.split("epoch=")[1]
-                num = ""
-                for c in part:
-                    if c.isdigit(): num += c
-                    else: break
-                return int(num)
-            return -1
-        except:
-            return -1
-            
-    ckpts.sort(key=get_epoch, reverse=True)
-    return ckpts[0]
+    try:
+        name = os.path.basename(path)
+        if "epoch=" in name:
+            part = name.split("epoch=")[1]
+            num = ""
+            for c in part:
+                if c.isdigit(): num += c
+                else: break
+            return int(num)
+        return -1
+    except Exception:
+        return -1
 
 def get_config_path(folder):
     cfg_dir = os.path.join(folder, "configs")
@@ -118,15 +147,18 @@ def get_config_path(folder):
     
     cfg = os.path.join(cfg_dir, "project.yaml")
     if os.path.exists(cfg): return cfg
+
+    def newest(paths):
+        return max(paths, key=os.path.getmtime) if paths else None
     
     # Check for anything ending in project.yaml (like 2026-02-18-project.yaml)
     yamls = glob.glob(os.path.join(cfg_dir, "*-project.yaml"))
-    if yamls: return yamls[0]
+    if yamls: return newest(yamls)
     
     # Fallback to any yaml that isn't lightning
     yamls = glob.glob(os.path.join(cfg_dir, "*.yaml"))
     yamls = [y for y in yamls if "lightning" not in y]
-    if yamls: return yamls[0]
+    if yamls: return newest(yamls)
     
     return None
 
@@ -663,22 +695,33 @@ def main():
 
             # Save Summary
             df = pd.DataFrame(model_metrics)
+            summary_metric_cols = [
+                "mae",
+                "rmse",
+                "r2",
+                "mape",
+                "ssim",
+                "grad_corr",
+                "inference_time",
+            ]
+            summary_metric_cols = [c for c in summary_metric_cols if c in df.columns]
             if "channel" in df.columns:
-                summary = df.groupby("channel").agg(['mean', 'std'])
+                summary = df.groupby("channel")[summary_metric_cols].agg(['mean', 'std'])
+                summary.columns = [f"{metric}_{stat}" for metric, stat in summary.columns]
             else:
-                summary = df.agg(['mean', 'std'])
+                summary = df[summary_metric_cols].agg(['mean', 'std'])
             summary.to_csv(os.path.join(outdir, "summary_metrics.csv"))
             
-            # Flatten multi-index columns if they exist (for the master CSV)
-            if isinstance(summary.columns, pd.MultiIndex):
-                summary_flat = summary.xs('mean', axis=1, level=1)
-                for channel_val, row_data in summary_flat.iterrows():
+            # Master CSV keeps the mean values only for compact experiment comparison.
+            if "channel" in df.columns:
+                summary_means = df.groupby("channel")[summary_metric_cols].mean()
+                for channel_val, row_data in summary_means.iterrows():
                     mean_row = row_data.to_dict()
                     mean_row['Experiment'] = f"{exp_name}_{channel_val}"
                     mean_row['Timestamp'] = latest_run['timestamp']
                     all_summaries.append(mean_row)
             else:
-                mean_row = df.mean().to_dict()
+                mean_row = df[summary_metric_cols].mean().to_dict()
                 mean_row['Experiment'] = exp_name
                 mean_row['Timestamp'] = latest_run['timestamp']
                 all_summaries.append(mean_row)

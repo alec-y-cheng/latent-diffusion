@@ -16,6 +16,9 @@ class CFDDataset(Dataset):
         self.size = size
         self.is_hdf5 = data_path.endswith('.h5')
         self._h5f = None # Lazy handle for h5py
+
+        if not os.path.exists(self.data_path):
+            raise FileNotFoundError(f"Dataset file not found: {self.data_path}")
         
         try:
             if self.is_hdf5:
@@ -41,6 +44,8 @@ class CFDDataset(Dataset):
                     self.max_val = np.max(train_data, axis=(0, 2, 3)).reshape(-1, 1, 1)
                     
         except Exception as e:
+            if self.is_hdf5:
+                raise RuntimeError(f"Could not load HDF5 data from {self.data_path}: {e}") from e
             print(f"ERROR: Could not load data from {self.data_path}: {e}")
             self.num_samples = 10
             self.is_hdf5 = False
@@ -107,6 +112,26 @@ class CFDValidation(CFDDataset):
         super().__init__(data_path=data_path, split="validation", size=size, **kwargs)
 
 class CFDConditionalDataset(Dataset):
+    @staticmethod
+    def _channel_min_max(data):
+        if data.ndim == 3:
+            data = data[:, None, :, :]
+        if data.ndim != 4:
+            raise ValueError(f"Expected target data with shape (N,C,H,W) or (N,H,W), got {data.shape}")
+        min_val = np.min(data, axis=(0, 2, 3)).reshape(-1, 1, 1)
+        max_val = np.max(data, axis=(0, 2, 3)).reshape(-1, 1, 1)
+        return min_val, max_val
+
+    def _set_y_stats(self, stat_y):
+        self.min_y, self.max_y = self._channel_min_max(stat_y)
+        self.range_y = self.max_y - self.min_y
+        self.range_y[self.range_y == 0] = 1e-6
+
+    def _print_y_stats(self):
+        print("CFDConditional target normalization: per-channel [-1, 1]")
+        for c in range(self.min_y.shape[0]):
+            print(f"  Y Ch {c}: Min={self.min_y[c,0,0]:.5f}, Max={self.max_y[c,0,0]:.5f}")
+
     def __init__(self, data_path, split="train", split_ratio=0.9, augment=False):
         """
         Custom Dataset for Conditional CFD Generation.
@@ -116,12 +141,18 @@ class CFDConditionalDataset(Dataset):
         self.split = split
         self.split_ratio = split_ratio
         self.augment = augment
+
+        if not os.path.exists(data_path):
+            raise FileNotFoundError(f"Dataset path not found: {data_path}")
         
         # 1. Identify Files
         if os.path.isdir(data_path):
             self.files = sorted([os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('.npz') or f.endswith('.h5')])
         else:
             self.files = [data_path]
+
+        if not self.files:
+            raise FileNotFoundError(f"No .npz or .h5 files found in dataset path: {data_path}")
             
         print(f"CFDConditional: Found {len(self.files)} files.")
         
@@ -137,23 +168,21 @@ class CFDConditionalDataset(Dataset):
             import h5py
             with h5py.File(self.files[0], 'r') as h5f:
                 total_samples = h5f['X'].shape[0]
+                split_point = int(total_samples * self.split_ratio)
                 
-                # Normalization Stats (Compute from FIRST chunk as approximation)
-                limit = min(500, total_samples)
+                # Match CFDDataset/autoencoder target stats: per-channel stats
+                # from the first training subset.
+                limit = min(500, split_point if split_point > 0 else total_samples)
                 stat_x = h5f['X'][:limit]
                 stat_y = h5f['Y'][:limit]
                 
-                self.min_y = np.min(stat_y)
-                self.max_y = np.max(stat_y)
-                self.range_y = self.max_y - self.min_y
-                if self.range_y == 0: self.range_y = 1e-6
+                self._set_y_stats(stat_y)
                 self.min_x = np.min(stat_x, axis=(0, 2, 3)).reshape(-1, 1, 1)
                 self.max_x = np.max(stat_x, axis=(0, 2, 3)).reshape(-1, 1, 1)
                 self.range_x = self.max_x - self.min_x
                 self.range_x[self.range_x == 0] = 1e-6
             
             # Setup indices
-            split_point = int(total_samples * self.split_ratio)
             if self.split == "train":
                 self.indices = [(0, i) for i in range(0, split_point)]
             else:
@@ -161,6 +190,7 @@ class CFDConditionalDataset(Dataset):
             
             self.length = len(self.indices)
             print(f"CFDConditional HDF5 ({self.split}): Total={self.length}")
+            self._print_y_stats()
             self._h5f = None # Open lazily per worker
         else:
             # 2. Map Files
@@ -223,19 +253,18 @@ class CFDConditionalDataset(Dataset):
             ref_x = self.data_chunks_x[0]
             ref_y = self.data_chunks_y[0]
             
-            limit = min(500, ref_x.shape[0])
+            ref_split_point = int(ref_x.shape[0] * self.split_ratio)
+            limit = min(500, ref_split_point if ref_split_point > 0 else ref_x.shape[0])
             stat_x = ref_x[:limit]
             stat_y = ref_y[:limit]
             
-            self.min_y = np.min(stat_y)
-            self.max_y = np.max(stat_y)
-            self.range_y = self.max_y - self.min_y
-            if self.range_y == 0: self.range_y = 1e-6
+            self._set_y_stats(stat_y)
     
             self.min_x = np.min(stat_x, axis=(0, 2, 3)).reshape(-1, 1, 1)
             self.max_x = np.max(stat_x, axis=(0, 2, 3)).reshape(-1, 1, 1)
             self.range_x = self.max_x - self.min_x
             self.range_x[self.range_x == 0] = 1e-6
+            self._print_y_stats()
     
     def __len__(self):
         return self.length
