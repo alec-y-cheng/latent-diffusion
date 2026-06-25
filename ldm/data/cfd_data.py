@@ -3,6 +3,9 @@ from torch.utils.data import Dataset
 import numpy as np
 import os
 
+from ldm.data.cfd_transforms import transform_uk_roof_sample
+
+
 class CFDDataset(Dataset):
     def __init__(self, data_path, split="train", split_ratio=0.9, size=None):
         """
@@ -291,61 +294,67 @@ class CFDConditionalDataset(Dataset):
 
         # Augmentation (On-the-fly)
         if self.augment:
+            apply_transpose = np.random.rand() < 0.5
+            apply_hflip = np.random.rand() < 0.5
+            apply_vflip = np.random.rand() < 0.5
+
+            if x.shape[0] == 8:
+                x, y = transform_uk_roof_sample(
+                    x,
+                    y,
+                    transpose=apply_transpose,
+                    hflip=apply_hflip,
+                    vflip=apply_vflip,
+                )
+            elif x.shape[0] != 15:
+                raise ValueError(
+                    f"Augmentation supports 8-channel UK roof or 15-channel DID "
+                    f"inputs, got {x.shape[0]} channels"
+                )
+
             # 1. Transpose: Swap spatial dims (H, W) -> (W, H)
             # This allows constructing 90-degree rotations (Transpose + Flip)
-            if np.random.rand() < 0.5:
+            if x.shape[0] == 15 and apply_transpose:
                 x = np.swapaxes(x, 1, 2) # (C, W, H)
                 y = np.swapaxes(y, 1, 2) # (1, W, H)
                 
                 x_copy = x.copy()
-                if x.shape[0] == 15:
-                    # DID mapping: X<->Y (11<->12), Sin<->Cos (13<->14)
-                    x[11], x[12] = x_copy[12], x_copy[11]
-                    x[13], x[14] = x_copy[14], x_copy[13]
-                    # Swap DID compass across diagonal: East(0)<->South(2), West(4)<->North(6), SW(3)<->NE(7)
-                    x[0], x[2] = x_copy[2], x_copy[0]
-                    x[4], x[6] = x_copy[6], x_copy[4]
-                    x[3], x[7] = x_copy[7], x_copy[3]
-                else:
-                    x[4], x[5] = x_copy[5], x_copy[4]
-                    x[7], x[6] = x_copy[6], x_copy[7]
+                # DID mapping: X<->Y (11<->12), Sin<->Cos (13<->14)
+                x[11], x[12] = x_copy[12], x_copy[11]
+                x[13], x[14] = x_copy[14], x_copy[13]
+                # Swap DID compass across diagonal: East(0)<->South(2), West(4)<->North(6), SW(3)<->NE(7)
+                x[0], x[2] = x_copy[2], x_copy[0]
+                x[4], x[6] = x_copy[6], x_copy[4]
+                x[3], x[7] = x_copy[7], x_copy[3]
                 del x_copy
 
             # 2. Random Horizontal Flip (p=0.5)
-            if np.random.rand() < 0.5:
+            if x.shape[0] == 15 and apply_hflip:
                 x = x[:, :, ::-1]
                 y = y[:, :, ::-1]
                 
-                if x.shape[0] == 15:
-                    x[11] *= -1 # Invert X_local
-                    x[13] *= -1 # Invert Sin (X-component)
-                    # Horizontal swap: East(0)<->West(4), SE(1)<->SW(3), NE(7)<->NW(5)
-                    x_copy = x.copy()
-                    x[0], x[4] = x_copy[4], x_copy[0]
-                    x[1], x[3] = x_copy[3], x_copy[1]
-                    x[5], x[7] = x_copy[7], x_copy[5]
-                    del x_copy
-                else:
-                    x[4] *= -1
-                    x[6] *= -1
+                x[11] *= -1 # Invert X_local
+                x[13] *= -1 # Invert Sin (X-component)
+                # Horizontal swap: East(0)<->West(4), SE(1)<->SW(3), NE(7)<->NW(5)
+                x_copy = x.copy()
+                x[0], x[4] = x_copy[4], x_copy[0]
+                x[1], x[3] = x_copy[3], x_copy[1]
+                x[5], x[7] = x_copy[7], x_copy[5]
+                del x_copy
 
             # 3. Random Vertical Flip (p=0.5)
-            if np.random.rand() < 0.5:
+            if x.shape[0] == 15 and apply_vflip:
                 x = x[:, ::-1, :]
                 y = y[:, ::-1, :]
                 
-                if x.shape[0] == 15:
-                    x[12] *= -1 # Invert Y_local
-                    x[14] *= -1 # Invert Cos (Y-component)
-                    # Vertical flip: South(2)<->North(6), SE(1)<->NE(7), SW(3)<->NW(5)
-                    x_copy = x.copy()
-                    x[2], x[6] = x_copy[6], x_copy[2]
-                    x[1], x[7] = x_copy[7], x_copy[1]
-                    x[3], x[5] = x_copy[5], x_copy[3]
-                    del x_copy
-                else:
-                    x[5] *= -1
-                    x[7] *= -1
+                x[12] *= -1 # Invert Y_local
+                x[14] *= -1 # Invert Cos (Y-component)
+                # Vertical flip: South(2)<->North(6), SE(1)<->NE(7), SW(3)<->NW(5)
+                x_copy = x.copy()
+                x[2], x[6] = x_copy[6], x_copy[2]
+                x[1], x[7] = x_copy[7], x_copy[1]
+                x[3], x[5] = x_copy[5], x_copy[3]
+                del x_copy
                 
             # Handle negative strides from flipping for torch compatibility
             if x.strides[1] < 0 or x.strides[2] < 0:

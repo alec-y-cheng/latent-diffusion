@@ -24,6 +24,7 @@ from ldm.modules.ema import LitEma
 from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianDistribution
 from ldm.modules.losses.grad_corr import GradCorrLoss
 from ldm.modules.losses.PINNSloss import PINNSLoss
+from ldm.modules.losses.pix2pix_gradient import Pix2PixGradientLoss
 from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, AutoencoderKL
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
@@ -447,6 +448,10 @@ class LatentDiffusion(DDPM):
                  grad_corr_weight=0.0,
                  grad_corr_per_channel=False,
                  grad_corr_masked=False,
+                 pix2pix_gradient_weight=0.0,
+                 pix2pix_gradient_masked=False,
+                 pix2pix_gradient_t_max=1000,
+                 pix2pix_gradient_channel_weights=None,
                  use_pinn_loss=False,
                  pinn_loss_weight=1.0,
                  lambda_res=1.0,
@@ -487,6 +492,22 @@ class LatentDiffusion(DDPM):
             )
             self.grad_corr_loss = GradCorrLoss(per_channel=self.grad_corr_per_channel)
 
+        self.pix2pix_gradient_weight = pix2pix_gradient_weight
+        self.pix2pix_gradient_masked = pix2pix_gradient_masked
+        self.pix2pix_gradient_t_max = pix2pix_gradient_t_max
+        self.pix2pix_gradient_channel_weights = pix2pix_gradient_channel_weights
+        if self.pix2pix_gradient_weight > 0:
+            print(
+                "LatentDiffusion: Enabled Pix2Pix Sobel gradient matching "
+                f"(weight={self.pix2pix_gradient_weight}, "
+                f"masked={self.pix2pix_gradient_masked}, "
+                f"t_max={self.pix2pix_gradient_t_max}, "
+                f"channel_weights={self.pix2pix_gradient_channel_weights})"
+            )
+            self.pix2pix_gradient_loss = Pix2PixGradientLoss(
+                channel_weights=self.pix2pix_gradient_channel_weights
+            )
+
         self.use_pinn_loss = use_pinn_loss
         self.pinn_loss_weight = pinn_loss_weight
         
@@ -509,7 +530,8 @@ class LatentDiffusion(DDPM):
                 "LatentDiffusion: Enabled PINNSLoss physics training "
                 f"(Weight: {self.pinn_loss_weight}, Res: {self.lambda_res}, "
                 f"BC: {self.lambda_bc}, Smooth: {self.lambda_smooth}, "
-                f"Range: {self.lambda_range})"
+                f"Range: {self.lambda_range}, SDF channel: {self.pinn_sdf_channel}, "
+                f"Building channel: {self.pinn_building_channel})"
             )
             self.pinn_loss_fn = PINNSLoss(
                 lambda_res=self.lambda_res,
@@ -1014,6 +1036,33 @@ class LatentDiffusion(DDPM):
             device=solid.device, dtype=solid.dtype
         )
 
+    def _add_pix2pix_gradient_loss(
+        self, loss, loss_dict, prefix, pred, target, cond, t
+    ):
+        if self.pix2pix_gradient_weight <= 0:
+            return loss
+
+        gradient_mask = None
+        if self.pix2pix_gradient_masked:
+            gradient_mask = self._target_masks_from_condition(
+                cond, pred.shape[-2], pred.shape[-1], pred.shape[1]
+            )
+
+        sample_mask = None
+        if 0 < self.pix2pix_gradient_t_max < self.num_timesteps:
+            sample_mask = t < self.pix2pix_gradient_t_max
+
+        gradient_loss, per_channel = self.pix2pix_gradient_loss(
+            pred, target, mask=gradient_mask, sample_mask=sample_mask
+        )
+        loss_dict[f"{prefix}/loss_pix2pix_gradient"] = gradient_loss
+        for ch, channel_loss in enumerate(per_channel):
+            name = CFD_TARGET_NAMES[ch] if ch < len(CFD_TARGET_NAMES) else f"ch{ch}"
+            loss_dict[f"{prefix}/loss_pix2pix_gradient_{name}"] = channel_loss
+        if sample_mask is not None:
+            loss_dict[f"{prefix}/pix2pix_gradient_active_fraction"] = sample_mask.float().mean()
+        return loss + self.pix2pix_gradient_weight * gradient_loss
+
     def _add_pixel_metrics(self, loss_dict, prefix, pred, target):
         err = pred - target
         mae_ch = err.abs().mean(dim=(0, 2, 3))
@@ -1232,7 +1281,8 @@ class LatentDiffusion(DDPM):
         needs_pixel_metrics = prefix == "val"
 
         # --- GradCorr Loss Integration ---
-        if self.grad_corr_weight > 0 or needs_pixel_metrics:
+        needs_pixel_loss = self.grad_corr_weight > 0 or self.pix2pix_gradient_weight > 0
+        if needs_pixel_loss or needs_pixel_metrics:
             # 1. Reconstruct x0 (latent)
             if self.parameterization == "eps":
                 x_recon = self.predict_start_from_noise(x_noisy, t=t, noise=model_output)
@@ -1243,7 +1293,7 @@ class LatentDiffusion(DDPM):
             
             if x_recon is not None:
                 # 2. Decode to Pixel Space
-                if self.grad_corr_weight > 0 and self.training:
+                if needs_pixel_loss and self.training:
                     x_recon_pixel = self.differentiable_decode_first_stage(x_recon)
                 else:
                     x_recon_pixel = self.decode_first_stage(x_recon)
@@ -1262,6 +1312,11 @@ class LatentDiffusion(DDPM):
                     gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel, mask=gc_mask)
                     loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
                     loss = loss + self.grad_corr_weight * gc_loss
+
+                loss = self._add_pix2pix_gradient_loss(
+                    loss, loss_dict, prefix,
+                    x_recon_pixel, x_start_pixel, cond, t
+                )
 
                 if needs_pixel_metrics:
                     self._add_pixel_metrics(loss_dict, prefix, x_recon_pixel, x_start_pixel)
@@ -1340,6 +1395,12 @@ class LatentDiffusion(DDPM):
             gc_loss = self.grad_corr_loss(x_recon_pixel, x_start_pixel, mask=gc_mask)
             loss_dict.update({f'{prefix}/loss_grad_corr': gc_loss})
             loss = loss + self.grad_corr_weight * gc_loss
+
+        if x_recon is not None:
+            loss = self._add_pix2pix_gradient_loss(
+                loss, loss_dict, prefix,
+                x_recon_pixel, x_start_pixel, cond_tensor, t
+            )
 
         loss_dict.update({f'{prefix}/loss': loss})
 

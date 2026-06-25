@@ -24,13 +24,13 @@ lightning_logs/
 # -------------------------
 # Data (DO NOT COMMIT)
 # -------------------------
-data/*.npz
-data/*.npy
-data/*.h5
-data/*.hdf5
-data/raw/
-data/processed/
-data/
+/data/*.npz
+/data/*.npy
+/data/*.h5
+/data/*.hdf5
+/data/raw/
+/data/processed/
+/data/
 
 # -------------------------
 # OS / editor junk
@@ -44,4 +44,3 @@ data/
 # -------------------------
 scratch/
 slurm-*.out
-

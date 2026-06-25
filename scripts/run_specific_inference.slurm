@@ -2,7 +2,7 @@
 #SBATCH --job-name=ldm_inf_specific
 #SBATCH --account=gts-pkastner3
 #SBATCH --partition=gpu-h200
-#SBATCH --qos=inferno
+#SBATCH --qos=embers
 #SBATCH --gres=gpu:h200:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=256G
@@ -56,4 +56,4 @@ python scripts/fast_batch_inference.py \
     --data_path data/uk_roof_dataset.h5 \
     --default_config configs/latent-diffusion/uk/cfd_ldm_uk.yaml \
     --outdir_suffix fast_inference_best_ckpt_test \
-    --filter uk_grad_corr_low,uk_pinns_baseline,uk_physics_hybrid,uk_roof_balanced_hybrid
+    --filter uk_grad_corr_low,uk_pinns_baseline,uk_physics_hybrid,uk_roof_balanced_hybrid_fixed,uk_pix2pix_sobel_hybrid

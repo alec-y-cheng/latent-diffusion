@@ -3,6 +3,7 @@
 # Usage:
 #   ./scripts/submit_uk_experiments.sh [--resume]
 #   AE_CKPT=/path/to/autoencoder.ckpt ./scripts/submit_uk_experiments.sh [--resume]
+#   ONLY_EXPERIMENT=uk_pix2pix_sobel_hybrid ./scripts/submit_uk_experiments.sh
 # Submits all UK 4-channel LDM experiment variants
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -87,6 +88,11 @@ submit_job() {
     NAME=$1
     ARGS=$2
     CONFIG=$3
+
+    if [ -n "${ONLY_EXPERIMENT:-}" ] && [ "$NAME" != "$ONLY_EXPERIMENT" ]; then
+        return 0
+    fi
+
     FINAL_ARGS="-b $CONFIG $ARGS model.params.first_stage_config.params.ckpt_path=$AE_CKPT lightning.trainer.max_epochs=500"
     
     if [ "$RESUME_MODE" = true ]; then
@@ -114,6 +120,82 @@ submit_job() {
 #logs/2026-04-28T02-29-06_autoencoder_kl_32x32x4_uk/checkpoints/epoch=000097.ckpt
 
 # --- Standard UNet (no physics) ---
+
+
+submit_job "uk_physics_hybrid" "-n uk_physics_hybrid \
+ model.params.use_pinn_loss=True \
+ model.params.pinn_loss_weight=5.0 \
+ model.params.grad_corr_weight=0.5 \
+ model.base_learning_rate=5.0e-7 \
+ data.params.batch_size=16 \
+ lightning.trainer.accumulate_grad_batches=4 \
+ lightning.trainer.gradient_clip_val=1.0 \
+ lightning.trainer.precision=16 \
+ model.params.original_elbo_weight=5.0e-6 \
+ lightning.callbacks.image_logger.params.batch_frequency=2000 \
+ lightning.modelcheckpoint.params.save_top_k=3 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
+
+
+
+submit_job "uk_pinns_baseline" "-n uk_pinns_baseline \
+ model.params.use_pinn_loss=True \
+ model.params.pinn_loss_weight=5.0 \
+ model.params.grad_corr_weight=0.02 \
+ model.params.lambda_res=1.0 \
+ model.params.lambda_bc=1.0 \
+ model.params.lambda_smooth=0.25 \
+ model.params.lambda_range=0.05 \
+ model.params.unet_config.params.use_wavelet=False \
+ model.base_learning_rate=5.0e-7 \
+ data.params.batch_size=16 \
+ lightning.trainer.accumulate_grad_batches=4 \
+ lightning.trainer.gradient_clip_val=1.0 \
+ lightning.trainer.precision=16 \
+ model.params.original_elbo_weight=5.0e-6 \
+ lightning.callbacks.image_logger.params.batch_frequency=2000 \
+ lightning.modelcheckpoint.params.save_top_k=3 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
+
+
+
+ <<'COMMENT'
+
+
+
+submit_job "uk_pix2pix_sobel_hybrid" "-n uk_pix2pix_sobel_hybrid \
+ model.params.use_pinn_loss=True \
+ model.params.pinn_loss_weight=2.0 \
+ model.params.grad_corr_weight=0.10 \
+ model.params.grad_corr_per_channel=True \
+ model.params.grad_corr_masked=True \
+ model.params.pix2pix_gradient_weight=0.10 \
+ model.params.pix2pix_gradient_masked=True \
+ model.params.pix2pix_gradient_t_max=500 \
+ model.params.pix2pix_gradient_channel_weights=1.0:1.0:1.5:1.5 \
+ model.params.pinn_sdf_channel=3 \
+ model.params.pinn_building_channel=4 \
+ model.params.pinn_building_mask_sharpness=100.0 \
+ model.params.lambda_res=0.5 \
+ model.params.lambda_bc=1.0 \
+ model.params.lambda_smooth=0.10 \
+ model.params.lambda_range=0.05 \
+ model.params.lambda_masked_recon=1.0 \
+ model.params.lambda_roof_background=0.25 \
+ model.params.lambda_floor_background=0.10 \
+ model.params.turbulence_smooth_weight=0.15 \
+ model.params.roof_smooth_weight=0.25 \
+ model.params.unet_config.params.use_wavelet=False \
+ model.base_learning_rate=5.0e-7 \
+ data.params.batch_size=16 \
+ lightning.trainer.accumulate_grad_batches=4 \
+ lightning.trainer.gradient_clip_val=1.0 \
+ lightning.trainer.precision=16 \
+ model.params.original_elbo_weight=5.0e-6 \
+ lightning.callbacks.image_logger.params.batch_frequency=2000 \
+ lightning.modelcheckpoint.params.save_top_k=3 \
+ lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
+
 
 
 submit_job "uk_roof_balanced_hybrid_fixed" "-n uk_roof_balanced_hybrid_fixed \
@@ -149,24 +231,7 @@ submit_job "uk_roof_balanced_hybrid_fixed" "-n uk_roof_balanced_hybrid_fixed \
 
 
 
-submit_job "uk_pinns_baseline" "-n uk_pinns_baseline \
- model.params.use_pinn_loss=True \
- model.params.pinn_loss_weight=5.0 \
- model.params.grad_corr_weight=0.02 \
- model.params.lambda_res=1.0 \
- model.params.lambda_bc=1.0 \
- model.params.lambda_smooth=0.25 \
- model.par<<'COMMENT'ams.lambda_range=0.05 \
- model.params.unet_config.params.use_wavelet=False \
- model.base_learning_rate=5.0e-7 \
- data.params.batch_size=16 \
- lightning.trainer.accumulate_grad_batches=4 \
- lightning.trainer.gradient_clip_val=1.0 \
- lightning.trainer.precision=16 \
- model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=2000 \
- lightning.modelcheckpoint.params.save_top_k=3 \
- lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
+
 
 
 submit_job "uk_grad_corr_low" "-n uk_grad_corr_low \
@@ -182,22 +247,11 @@ submit_job "uk_grad_corr_low" "-n uk_grad_corr_low \
  lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk.yaml"
 
 
-submit_job "uk_physics_hybrid" "-n uk_physics_hybrid \
- model.params.use_pinn_loss=True \
- model.params.pinn_loss_weight=5.0 \
- model.params.grad_corr_weight=0.5 \
- model.base_learning_rate=5.0e-7 \
- data.params.batch_size=16 \
- lightning.trainer.accumulate_grad_batches=4 \
- lightning.trainer.gradient_clip_val=1.0 \
- lightning.trainer.precision=16 \
- model.params.original_elbo_weight=5.0e-6 \
- lightning.callbacks.image_logger.params.batch_frequency=2000 \
- lightning.modelcheckpoint.params.save_top_k=3 \
- lightning.trainer.log_every_n_steps=50" "configs/latent-diffusion/uk/cfd_ldm_uk_pinnsformer.yaml"
+
+# Pix2PixHD-inspired LDM: retain the balanced geometry-aware objective and add
+# direct four-channel Sobel gradient matching on cleaner x0 reconstructions.
 
 
- <<'COMMENT'
 
 submit_job "uk_grad_corr_med" "-n uk_grad_corr_med \
  model.params.grad_corr_weight=0.5 \

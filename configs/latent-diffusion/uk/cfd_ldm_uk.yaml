@@ -15,6 +15,9 @@ model:
     concat_mode: true
     monitor: val/loss
     grad_corr_weight: 0.02
+    pinn_sdf_channel: 3
+    pinn_building_channel: 4
+    pinn_building_mask_sharpness: 100.0
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:

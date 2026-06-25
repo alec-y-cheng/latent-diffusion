@@ -21,6 +21,9 @@ model:
     lambda_bc: 1.0
     lambda_smooth: 0.25
     lambda_range: 0.05
+    pinn_sdf_channel: 3
+    pinn_building_channel: 4
+    pinn_building_mask_sharpness: 100.0
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:
