@@ -27,14 +27,19 @@ Common datasets:
 
 Standard inputs contain 8 channels:
 
-0. Signed Distance Field (SDF)
-1. Building Height
-2. Relative Height (Z)
-3. Background Wind Ratio (`U/Uref`)
-4. Local X Coordinate
-5. Local Y Coordinate
-6. Wind Direction Sine
-7. Wind Direction Cosine
+  Input X, shape (8, H, W)
+
+  0: X coordinate
+  1: Y coordinate
+  2: Z_relative
+  3: SDF
+  4: Bldg_height
+  5: U/Uref
+  6: dir_sin
+  7: dir_cos
+
+
+
 
 Inputs are normalized before training. Most models operate on tensors of shape:
 
@@ -54,10 +59,12 @@ Actual wind magnitude can be reconstructed as:
 
 Current experiments may predict multiple outputs simultaneously:
 
-* Ground velocity (`u_ground`)
-* Roof velocity (`u_roof`)
-* Ground turbulent kinetic energy (`tke_ground`)
-* Roof turbulent kinetic energy (`tke_roof`)
+  Target Y, shape (4, H, W)
+
+  0: floor speed / mag_U
+  1: floor turbulence / k
+  2: roof speed / mag_U_roof
+  3: roof turbulence / k_roof
 
 Do not assume outputs are single-channel.
 
